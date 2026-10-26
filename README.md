@@ -6,7 +6,9 @@ Aplicación web en español para estimar materiales de camas fotovoltaicas, edit
 
 El usuario reportó una alerta de troyano sobre la primera versión empaquetada. Se retiró el ZIP de la versión actual del repositorio mientras se investiga. **No abras el archivo descargado, no permitas su ejecución y no desactives el antivirus.** Usa la cuarentena o eliminación ofrecida por tu antivirus.
 
-La detección todavía no ha sido identificada ni se ha establecido si corresponde a código malicioso o a un falso positivo. No se ha certificado el código fuente ni sus dependencias como alternativa segura al archivo señalado.
+La captura del usuario identifica la detección de Microsoft Defender como `Trojan:Script/Ulthar.A!ml`, de gravedad alta y estado activo. Todavía no se ha establecido si corresponde a código malicioso o a un falso positivo. No se ha certificado el código fuente ni sus dependencias como alternativa segura al archivo señalado.
+
+Consulta el [registro de investigación](docs/seguridad.md).
 
 El ZIP retirado tiene SHA-256 `aee820f7fa85dbe99a1f331bc972e890a93a174e0cb52f0edc8b8b514dfb948b`. El archivo puede seguir presente en versiones anteriores del historial; no lo descargues desde ellas.
 
