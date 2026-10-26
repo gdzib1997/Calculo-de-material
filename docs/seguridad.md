@@ -53,3 +53,17 @@ La ejecución [40371486311](https://github.com/gdzib1997/Calculo-de-material/act
 Se añadió un flujo separado `review-web.yml` para instalar con lockfile y sin scripts de instalación, ejecutar pruebas, compilar el sitio convencional con recursos separados y analizar también esos archivos en Windows. Sólo después de completar el escaneo permite preparar una rama nueva `gh-pages`, sin sobrescribir referencias existentes, incluyendo un informe JSON de Defender y verificando que los archivos publicados coincidan con sus huellas analizadas. La descarga original permanece retirada.
 
 Subir el flujo no significa que haya pasado ni que GitHub Pages esté activo. La rama, el informe y el estado de ejecución deben verificarse antes de ofrecer la versión web. Los avisos moderados de dependencias siguen documentados; un escaneo no es una garantía absoluta de seguridad.
+
+## Resultado de la compilación web
+
+La ejecución [40372369435](https://github.com/gdzib1997/Calculo-de-material/actions/runs/40372369435) terminó con estado **Success** y preparó la rama `gh-pages` (commit `c6d0423da68fecf3e14438404b926e6bc43bc915`). El [informe JSON](https://raw.githubusercontent.com/gdzib1997/Calculo-de-material/gh-pages/defender-review.json) registra:
+
+- Fecha: 26/10/2026 11:51:28, Ciudad de México.
+- Motor: `1.1.26090.9`.
+- Firmas: `1.461.214.0`.
+- Código del analizador: `0`.
+- Archivos analizados: 31, incluidos el ZIP original y su contenido, y los archivos de la compilación web.
+
+No se observaron detecciones en esa ejecución y no se borraron ni cambiaron los archivos durante el análisis. Eso no confirma un falso positivo en el equipo del usuario ni garantiza resultados idénticos en otros equipos. No se devuelve el ZIP retirado como sustituto.
+
+GitHub Pages todavía requiere activación por el propietario desde Settings → Pages, fuente `Deploy from a branch`, rama `gh-pages`, carpeta `/(root)`. Las instrucciones oficiales de `actions/configure-pages` indican que activar Pages requiere un token distinto de `GITHUB_TOKEN`, con permisos administrativos; no se solicitó un token ni se intentó eludir esa restricción.

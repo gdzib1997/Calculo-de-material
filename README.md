@@ -6,11 +6,19 @@ Aplicación web en español para estimar materiales de camas fotovoltaicas, edit
 
 El usuario reportó una alerta de troyano sobre la primera versión empaquetada. Se retiró el ZIP de la versión actual del repositorio mientras se investiga. **No abras el archivo descargado, no permitas su ejecución y no desactives el antivirus.** Usa la cuarentena o eliminación ofrecida por tu antivirus.
 
-La captura del usuario identifica la detección de Microsoft Defender como `Trojan:Script/Ulthar.A!ml`, de gravedad alta y estado activo. Todavía no se ha establecido si corresponde a código malicioso o a un falso positivo. No se ha certificado el código fuente ni sus dependencias como alternativa segura al archivo señalado.
+La captura del usuario identifica la detección de Microsoft Defender como `Trojan:Script/Ulthar.A!ml`, de gravedad alta y estado activo. Todavía no se ha establecido si corresponde a código malicioso o a un falso positivo. No se declara ausencia absoluta de malware en el código fuente ni sus dependencias; consulta más abajo el resultado acotado de Defender para la versión web.
 
 Consulta el [registro de investigación](docs/seguridad.md).
 
 El ZIP retirado tiene SHA-256 `aee820f7fa85dbe99a1f331bc972e890a93a174e0cb52f0edc8b8b514dfb948b`. El archivo puede seguir presente en versiones anteriores del historial; no lo descargues desde ellas.
+
+## Versión web preparada para GitHub Pages
+
+La compilación de la rama [`gh-pages`](https://github.com/gdzib1997/Calculo-de-material/tree/gh-pages) fue analizada con Microsoft Defender en Windows. La ejecución terminó sin detecciones para esa muestra y esas firmas. [Informe del análisis](https://raw.githubusercontent.com/gdzib1997/Calculo-de-material/gh-pages/defender-review.json) · [Ejecución en Windows](https://github.com/gdzib1997/Calculo-de-material/actions/runs/40372369435).
+
+Para activar el sitio, el propietario del repositorio debe abrir [Settings → Pages](https://github.com/gdzib1997/Calculo-de-material/settings/pages), elegir **Deploy from a branch**, seleccionar **gh-pages** y **/(root)**, y pulsar **Save**. GitHub mostrará la dirección pública cuando termine el despliegue. La conexión de esta tarea puede subir archivos, pero no habilitar Pages con permisos de administración.
+
+El informe no garantiza que todos los antivirus den el mismo resultado y no resuelve por sí solo la detección original. La descarga ZIP original sigue retirada. Esta versión web conserva los límites de cálculo e ingeniería documentados.
 
 ## Ejecutar el código fuente
 
@@ -49,4 +57,4 @@ Las pruebas de navegador utilizan Chromium de `/usr/bin/chromium`; se puede camb
 
 Consulta [docs/calculo.md](docs/calculo.md). La tabla transcrita vive en `src/lib/model.ts` y se verifica mediante pruebas. No se afirma certificación, compatibilidad de componentes ni cumplimiento de manuales Ascender. Antes de usar cantidades para compra o construcción hay que confirmar el sistema exacto, la longitud a la que corresponde la tabla, sus componentes, las condiciones del sitio y la ingeniería estructural.
 
-El repositorio conserva el código fuente para revisión. La descarga empaquetada está suspendida por una alerta de antivirus; no se ha desplegado un sitio web público ni publicado un entorno nuevo.
+El repositorio conserva el código fuente, la investigación y una rama web analizada con Defender. La descarga empaquetada sigue suspendida. La activación de GitHub Pages corresponde al propietario; no se ha publicado un entorno cloud nuevo.
