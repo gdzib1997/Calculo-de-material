@@ -2,15 +2,13 @@
 
 Aplicación web en español para estimar materiales de camas fotovoltaicas, editar su distribución y verlas en 3D. Primera versión funcional, con tabla del usuario como referencia; **los manuales oficiales Unirac Ascender aún no se han validado**.
 
-## Probar la primera versión sin instalar herramientas
+## Descarga suspendida por alerta de antivirus
 
-1. [Descargar Unirack Studio (ZIP)](https://raw.githubusercontent.com/gdzib1997/Calculo-de-material/main/descargas/Unirack-Studio.zip).
-2. Extrae el ZIP a una carpeta.
-3. Abre **Unirack-Studio.html** con Google Chrome o Microsoft Edge.
+El usuario reportó una alerta de troyano sobre la primera versión empaquetada. Se retiró el ZIP de la versión actual del repositorio mientras se investiga. **No abras el archivo descargado, no permitas su ejecución y no desactives el antivirus.** Usa la cuarentena o eliminación ofrecida por tu antivirus.
 
-Incluye el editor de camas, vista 3D, biblioteca de paneles y exportación a PDF, Word y Excel. No requiere Node ni un servidor para usar esta copia. Descarga copias JSON con **Guardar proyecto** para conservar tus datos fuera del navegador.
+La detección todavía no ha sido identificada ni se ha establecido si corresponde a código malicioso o a un falso positivo. No se ha certificado el código fuente ni sus dependencias como alternativa segura al archivo señalado.
 
-![Captura de Unirack Studio](docs/captura.png)
+El ZIP retirado tiene SHA-256 `aee820f7fa85dbe99a1f331bc972e890a93a174e0cb52f0edc8b8b514dfb948b`. El archivo puede seguir presente en versiones anteriores del historial; no lo descargues desde ellas.
 
 ## Ejecutar el código fuente
 
@@ -49,4 +47,4 @@ Las pruebas de navegador utilizan Chromium de `/usr/bin/chromium`; se puede camb
 
 Consulta [docs/calculo.md](docs/calculo.md). La tabla transcrita vive en `src/lib/model.ts` y se verifica mediante pruebas. No se afirma certificación, compatibilidad de componentes ni cumplimiento de manuales Ascender. Antes de usar cantidades para compra o construcción hay que confirmar el sistema exacto, la longitud a la que corresponde la tabla, sus componentes, las condiciones del sitio y la ingeniería estructural.
 
-El repositorio incluye el código fuente y la primera versión descargable. La descarga se abre en tu equipo; no se ha desplegado un sitio web público ni publicado un entorno nuevo.
+El repositorio conserva el código fuente para revisión. La descarga empaquetada está suspendida por una alerta de antivirus; no se ha desplegado un sitio web público ni publicado un entorno nuevo.
