@@ -8,6 +8,7 @@ export default function Field({
   step = 0.01,
   unit,
   integer = false,
+  disabled = false,
 }: {
   label: string;
   value: number;
@@ -17,6 +18,7 @@ export default function Field({
   step?: number;
   unit?: string;
   integer?: boolean;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
@@ -26,6 +28,7 @@ export default function Field({
       <div className="number-field">
         <input
           aria-label={label}
+          disabled={disabled}
           type="number"
           inputMode="decimal"
           value={focused ? draft : String(value)}

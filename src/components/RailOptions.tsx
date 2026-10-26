@@ -1,6 +1,4 @@
-import { Wind } from "lucide-react";
 import type { Bed } from "../lib/model";
-import { braces } from "../lib/model";
 import Field from "./Field";
 export default function RailOptions({
   bed,
@@ -9,9 +7,6 @@ export default function RailOptions({
   bed: Bed;
   onChange: (patch: Partial<Bed>) => void;
 }) {
-  const diagonal =
-    braces({ ...bed, bracingEnabled: true, bracingLength: undefined })[0]
-      ?.length ?? 0;
   return (
     <>
       <label className="field">
@@ -40,89 +35,9 @@ export default function RailOptions({
         />
       )}
       <p className="help-text">
-        Los Beam Clip automáticos se cuentan sólo en los cruces de rieles
-        norte–sur habilitados. Puedes ajustar el factor por cruce.
+        Coloca los contravientos eligiendo dos patas en la pestaña
+        «Contravientos» o directamente en 3D.
       </p>
-      <div className="divider" />
-      <div className="switch-row">
-        <div>
-          <b>Rieles como contravientos</b>
-          <small>Sumarlos al total de rieles</small>
-        </div>
-        <button
-          role="switch"
-          aria-label="Contemplar contravientos"
-          aria-checked={!!bed.bracingEnabled}
-          className={`switch ${bed.bracingEnabled ? "on" : ""}`}
-          onClick={() => onChange({ bracingEnabled: !bed.bracingEnabled })}
-        >
-          <span />
-        </button>
-      </div>
-      {bed.bracingEnabled && (
-        <>
-          <label className="field">
-            <span>Eje de contravientos</span>
-            <select
-              className="full-select"
-              aria-label="Eje de contravientos"
-              value={bed.bracingAxis ?? "ew"}
-              onChange={(e) =>
-                onChange({ bracingAxis: e.target.value as Bed["bracingAxis"] })
-              }
-            >
-              <option value="ew">Este–oeste</option>
-              <option value="ns">Norte–sur</option>
-            </select>
-          </label>
-          <Field
-            label="Número de diagonales"
-            value={bed.bracingCount ?? 2}
-            onChange={(n) => onChange({ bracingCount: n })}
-            min={0}
-            max={100}
-            integer
-          />
-          <label className="check-field">
-            <input
-              type="checkbox"
-              aria-label="Longitud automática de contravientos"
-              checked={bed.bracingLength === undefined}
-              onChange={(e) =>
-                onChange({
-                  bracingLength: e.target.checked
-                    ? undefined
-                    : Math.max(0.1, Number(diagonal.toFixed(3))),
-                })
-              }
-            />{" "}
-            Longitud según patas y geometría
-          </label>
-          {bed.bracingLength !== undefined ? (
-            <Field
-              label="Longitud considerada por diagonal"
-              value={bed.bracingLength}
-              onChange={(n) => onChange({ bracingLength: n })}
-              min={0.1}
-              max={50}
-              unit="m"
-            />
-          ) : (
-            <p className="help-text">
-              Primera diagonal: {diagonal.toFixed(3)} m. Las longitudes se
-              recalculan al mover las patas.
-            </p>
-          )}
-          <div className="tip">
-            <Wind size={15} />
-            <p>
-              Se suman piezas comerciales por diagonal, sin descontar sobrantes.
-              La posición en 3D es esquemática y requiere revisión de
-              conexiones.
-            </p>
-          </div>
-        </>
-      )}
       <div className="divider" />
     </>
   );

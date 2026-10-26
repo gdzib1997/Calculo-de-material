@@ -18,16 +18,16 @@ import {
   Layers,
   Leaf,
   LoaderCircle,
-  MoreHorizontal,
   Plus,
   RotateCcw,
   Save,
   Settings2,
-  ShieldCheck,
   SlidersHorizontal,
   Sun,
   Trash2,
   Triangle,
+  Wind,
+  Move,
   X,
 } from "lucide-react";
 import {
@@ -36,13 +36,17 @@ import {
   calculate,
   createBed,
   dimensions,
-  EW_REFERENCE_SPACING,
   isActive,
   panelKey,
   sections,
   supports,
   validateProject,
-  warnings,
+  snapSupport,
+  bedPose,
+  projectBounds,
+  braceConnections,
+  braceAxis,
+  braces,
 } from "./lib/model";
 import type { Bed, MaterialId, Project, PanelPreset } from "./lib/model";
 import { download, loadProject, safeName, saveProject } from "./lib/storage";
@@ -50,22 +54,18 @@ import Field from "./components/Field";
 import PanelLibrary from "./components/PanelLibrary";
 import RoofEditor from "./components/RoofEditor";
 import RailOptions from "./components/RailOptions";
+import BraceEditor from "./components/BraceEditor";
+import BedPlacement from "./components/BedPlacement";
 import { PanelEditor, LegEditor } from "./components/GeometryEditor";
 import type { EditMode } from "./components/Scene";
 const Scene = lazy(() => import("./components/Scene"));
-const money = (n: number) =>
-  new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 2,
-  }).format(n);
 function App() {
   const [project, setProject] = useState<Project>(loadProject);
   const [selected, setSelected] = useState(project.beds[0].id);
   const bed = project.beds.find((b) => b.id === selected) || project.beds[0];
-  const [tab, setTab] = useState<"materials" | "layout" | "legs" | "method">(
-    "materials",
-  );
+  const [tab, setTab] = useState<
+    "materials" | "layout" | "legs" | "braces" | "placement"
+  >("materials");
   const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState("");
   const [toast, setToast] = useState("");
@@ -75,21 +75,19 @@ function App() {
   const [settings, setSettings] = useState<"layout" | "structure" | "roof">(
     "layout",
   );
-  const [editMode, setEditMode] = useState<EditMode>("remove");
+  const [editMode, setEditMode] = useState<EditMode>("navigate");
   const [panelSelection, setPanelSelection] = useState("0:0");
   const [supportSelection, setSupportSelection] = useState("");
-  const [showDetails, setShowDetails] = useState(false);
+  const [braceFirst, setBraceFirst] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const importPending = useRef<Project | null>(null);
   const [importName, setImportName] = useState("");
-  const prices = project.prices || {};
-  const materials =
-    scope === "bed" ? calculate(bed, prices) : aggregate(project, prices);
+  const materials = scope === "bed" ? calculate(bed) : aggregate(project);
   const totalPanels = project.beds.reduce((n, b) => n + activeCount(b), 0);
-  const totalMaterials = aggregate(project, prices);
-  const totalCost = totalMaterials.reduce(
-    (n, m) => n + m.quantity * m.price,
-    0,
+  const totalLegs = project.beds.reduce((n, b) => n + supports(b).length, 0);
+  const currentPose = bedPose(
+    project,
+    project.beds.findIndex((b) => b.id === bed.id),
   );
   const dims = dimensions(bed);
   const geometry = supports(bed);
@@ -184,21 +182,94 @@ function App() {
     setSupportSelection(id);
     changeProject((p) => ({
       ...p,
-      beds: p.beds.map((b) => {
-        if (b.id !== bed.id) return b;
-        const d = dimensions(b);
-        return {
-          ...b,
-          supportOverrides: {
-            ...b.supportOverrides,
-            [id]: {
-              x: Math.max(-d.width / 2, Math.min(d.width / 2, x)),
-              z: Math.max(-d.depth / 2, Math.min(d.depth / 2, z)),
-            },
-          },
-        };
-      }),
+      beds: p.beds.map((b) =>
+        b.id === bed.id
+          ? {
+              ...b,
+              supportOverrides: {
+                ...b.supportOverrides,
+                [id]: snapSupport(b, id, x, z),
+              },
+            }
+          : b,
+      ),
     }));
+  }
+  function setSupportTrack(id: string, trackId: string) {
+    const leg = geometry.find((s) => s.id === id);
+    if (!leg) return;
+    patch({
+      supportOverrides: {
+        ...bed.supportOverrides,
+        [id]: snapSupport(bed, id, leg.x, leg.z, trackId),
+      },
+    });
+    setEditMode("support");
+  }
+  function selectBed(id: string) {
+    setSelected(id);
+    setBraceFirst("");
+    setSupportSelection("");
+  }
+  function moveBed(id: string, x: number, z: number) {
+    changeProject((p) => ({
+      ...p,
+      beds: p.beds.map((b) =>
+        b.id === id
+          ? {
+              ...b,
+              position: {
+                x: Math.max(-200, Math.min(200, x)),
+                z: Math.max(-200, Math.min(200, z)),
+              },
+            }
+          : b,
+      ),
+    }));
+  }
+  function addBrace(from: string, to: string) {
+    const a = geometry.find((s) => s.id === from),
+      b = geometry.find((s) => s.id === to),
+      axis = a && b ? braceAxis(a, b) : undefined;
+    if (!axis) {
+      setToast("Selecciona dos patas distintas alineadas en E–O o N–S.");
+      return;
+    }
+    const connections = braceConnections(bed);
+    if (
+      connections.some((c) => c.fromId === from && c.toId === to && !c.reverse)
+    ) {
+      setToast("Ya existe ese contraviento.");
+      return;
+    }
+    patch({
+      manualBraces: [
+        ...connections,
+        { id: crypto.randomUUID(), fromId: from, toId: to, axis },
+      ],
+    });
+    setBraceFirst("");
+  }
+  function pickBrace(id: string) {
+    if (!braceFirst) {
+      setBraceFirst(id);
+      setTab("braces");
+    } else if (braceFirst === id) setBraceFirst("");
+    else addBrace(braceFirst, id);
+  }
+  function prepareNewBed(b: Bed) {
+    const bounds = projectBounds(project),
+      local = projectBounds({
+        ...project,
+        beds: [{ ...b, position: { x: 0, z: 0 } }],
+      });
+    return {
+      ...b,
+      position: {
+        x: Math.min(200, bounds.maxX + 2 - local.minX),
+        z: bounds.centerZ,
+      },
+    };
   }
   function resetSupport(id: string) {
     const next = { ...bed.supportOverrides };
@@ -207,29 +278,32 @@ function App() {
   }
   function changeMode(mode: EditMode) {
     setEditMode(mode);
-    setTab(mode === "support" ? "legs" : "layout");
+    if (mode === "support") setTab("legs");
+    else if (mode === "brace") setTab("braces");
+    else if (mode === "bed") setTab("placement");
+    else if (mode === "panel" || mode === "remove") setTab("layout");
   }
   function addBed() {
     if (project.beds.length >= 30) {
       setToast("Máximo 30 camas por proyecto.");
       return;
     }
-    const b = createBed(project.beds.length + 1);
+    const b = prepareNewBed(createBed(project.beds.length + 1));
     changeProject((p) => ({ ...p, beds: [...p.beds, b] }));
-    setSelected(b.id);
+    selectBed(b.id);
   }
   function duplicate() {
     if (project.beds.length >= 30) {
       setToast("Máximo 30 camas por proyecto.");
       return;
     }
-    const b = {
+    const b = prepareNewBed({
       ...structuredClone(bed),
       id: crypto.randomUUID(),
       name: `${bed.name} · copia`,
-    };
+    });
     changeProject((p) => ({ ...p, beds: [...p.beds, b] }));
-    setSelected(b.id);
+    selectBed(b.id);
     setToast("Cama duplicada.");
   }
   async function exportFile(kind: "pdf" | "word" | "excel") {
@@ -244,10 +318,10 @@ function App() {
       } catch {
         /* Imagen opcional. */
       }
-      if (kind === "excel") await exportExcel(project, prices);
-      if (kind === "pdf") await exportPDF(project, prices, img, bed.name);
-      if (kind === "word") await exportWord(project, prices, img, bed.name);
-      setToast("Reporte exportado con materiales, medidas y supuestos.");
+      if (kind === "excel") await exportExcel(project);
+      if (kind === "pdf") await exportPDF(project, img, bed.name);
+      if (kind === "word") await exportWord(project, img, bed.name);
+      setToast("Reporte exportado con materiales, medidas y ubicaciones.");
     } catch (e) {
       setToast(
         `No se pudo exportar: ${e instanceof Error ? e.message : "error desconocido"}`,
@@ -330,7 +404,7 @@ function App() {
           <span className="environment-dot" /> ESPACIO DE DISEÑO SOLAR
         </div>
         <div className="header-right">
-          <span className="version-tag">BETA 02</span>
+          <span className="version-tag">BETA 03</span>
           <div className="avatar">GS</div>
         </div>
       </header>
@@ -428,13 +502,6 @@ function App() {
             </h1>
             <p>Diseña tus camas de paneles y lleva el control de cada pieza.</p>
           </div>
-          <div className="source-chip">
-            <ShieldCheck size={18} />
-            <span>
-              Tabla de referencia cargada
-              <small>Validación Ascender pendiente</small>
-            </span>
-          </div>
         </div>
         <section className="stats">
           <div className="stat">
@@ -483,21 +550,19 @@ function App() {
               {bed.name} · Ajuste independiente
             </small>
           </div>
-          <div className="stat cost-stat">
+          <div className="stat">
             <div>
-              <span>Material estimado</span>
+              <span>Camas en el techo</span>
               <strong>
-                {money(totalCost)}
-                <small>MXN</small>
+                {project.beds.length}
+                <small>camas</small>
               </strong>
             </div>
             <span className="stat-icon">
               <Box size={21} />
             </span>
             <small className="stat-foot">
-              {Object.values(prices).some((v) => (v ?? 0) > 0)
-                ? "Sin impuestos, flete ni mano de obra"
-                : "Captura precios en la lista de materiales"}
+              {totalLegs} patas en el proyecto
             </small>
           </div>
         </section>
@@ -524,7 +589,7 @@ function App() {
               <select
                 id="bed-select"
                 value={bed.id}
-                onChange={(e) => setSelected(e.target.value)}
+                onChange={(e) => selectBed(e.target.value)}
               >
                 {project.beds.map((b) => (
                   <option key={b.id} value={b.id}>
@@ -553,7 +618,7 @@ function App() {
                   onClick={() => {
                     const next = project.beds.filter((b) => b.id !== bed.id);
                     changeProject((p) => ({ ...p, beds: next }));
-                    setSelected(next[0].id);
+                    selectBed(next[0].id);
                     setToast(
                       "Cama eliminada. Puedes recuperar una copia guardada del proyecto.",
                     );
@@ -757,18 +822,6 @@ function App() {
                   unit="m"
                 />
                 <Field
-                  label="Longitud de referencia supuesta"
-                  value={bed.referenceRailLength}
-                  onChange={(n) => patch({ referenceRailLength: n })}
-                  min={0.5}
-                  max={12}
-                  unit="m"
-                />
-                <p className="help-text">
-                  La imagen no indica la longitud del riel. Ajusta esta
-                  suposición antes de comprar.
-                </p>
-                <Field
                   label="Separación máxima entre patas E–O"
                   value={bed.supportSpacing}
                   onChange={(n) => patch({ supportSpacing: n })}
@@ -871,6 +924,8 @@ function App() {
                 roof={project.roof}
                 onChange={(roof) => changeProject((p) => ({ ...p, roof }))}
                 onError={setToast}
+                panelWidth={bed.panelWidth}
+                panelLength={bed.panelLength}
               />
             )}
             <div className="sidebar-footer">
@@ -891,13 +946,6 @@ function App() {
                 </div>
                 <div>
                   <span className="model-label">MODELO INTERACTIVO</span>
-                  <button
-                    className="icon-button"
-                    title="Ver reglas del cálculo"
-                    onClick={() => setTab("method")}
-                  >
-                    <MoreHorizontal size={19} />
-                  </button>
                 </div>
               </div>
               <Suspense
@@ -910,7 +958,7 @@ function App() {
                 <Scene
                   bed={bed}
                   onToggle={toggle}
-                  roof={project.roof}
+                  project={project}
                   mode={editMode}
                   onModeChange={changeMode}
                   selectedPanel={selectedPanel}
@@ -918,6 +966,10 @@ function App() {
                   onSelectPanel={(r, c) => selectPanel(panelKey(r, c))}
                   onSelectSupport={selectSupport}
                   onMoveSupport={moveSupport}
+                  onSelectBed={selectBed}
+                  onMoveBed={moveBed}
+                  braceFirst={braceFirst}
+                  onBracePick={pickBrace}
                 />
               </Suspense>
               <div className="model-info">
@@ -947,13 +999,27 @@ function App() {
                     ["materials", "Materiales", Box],
                     ["layout", "Paneles", Grid2X2],
                     ["legs", "Patas y bases", Triangle],
-                    ["method", "Reglas y supuestos", Info],
+                    ["braces", "Contravientos", Wind],
+                    ["placement", "Acomodar camas", Move],
                   ] as const
                 ).map(([id, label, Icon]) => (
                   <button
                     key={id}
                     className={tab === id ? "active" : ""}
-                    onClick={() => setTab(id)}
+                    onClick={() => {
+                      setTab(id);
+                      setEditMode(
+                        id === "legs"
+                          ? "support"
+                          : id === "braces"
+                            ? "brace"
+                            : id === "placement"
+                              ? "bed"
+                              : id === "layout"
+                                ? "panel"
+                                : "navigate",
+                      );
+                    }}
                   >
                     <Icon size={16} />
                     {label}
@@ -971,7 +1037,8 @@ function App() {
                     <div>
                       <h3>Lista de materiales</h3>
                       <p>
-                        Modifica cantidades o precios para ajustar tu proyecto.
+                        Modifica las cantidades finales para ajustar tu
+                        proyecto.
                       </p>
                     </div>
                     <select
@@ -998,12 +1065,6 @@ function App() {
                           <th>MATERIAL / COMPONENTE</th>
                           <th>ORIGEN</th>
                           <th>CANTIDAD</th>
-                          <th>
-                            P. UNITARIO <small>MXN</small>
-                          </th>
-                          <th>
-                            IMPORTE <small>MXN</small>
-                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1062,35 +1123,6 @@ function App() {
                                 )}
                               </div>
                             </td>
-                            <td>
-                              <div className="price-input">
-                                <span>$</span>
-                                <input
-                                  aria-label={`Precio ${m.name}`}
-                                  type="number"
-                                  min={0}
-                                  max={100000000}
-                                  step={0.01}
-                                  value={m.price || ""}
-                                  placeholder="0.00"
-                                  onChange={(e) => {
-                                    const n = Number(e.target.value);
-                                    if (
-                                      Number.isFinite(n) &&
-                                      n >= 0 &&
-                                      n <= 100000000
-                                    )
-                                      changeProject((p) => ({
-                                        ...p,
-                                        prices: { ...p.prices, [m.id]: n },
-                                      }));
-                                  }}
-                                />
-                              </div>
-                            </td>
-                            <td className="line-total">
-                              {money(m.quantity * m.price)}
-                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1098,21 +1130,14 @@ function App() {
                   </div>
                   <div className="table-footer">
                     <span>
-                      <CheckCircle2 size={14} />{" "}
+                      <CheckCircle2 size={14} />
                       {requiredManual
                         ? `${requiredManual} ajustes manuales en esta cama`
                         : "Cantidades actualizadas automáticamente"}
                     </span>
                     <span>
-                      Total {scope === "bed" ? "de esta cama" : "del proyecto"}{" "}
-                      <strong>
-                        {money(
-                          materials.reduce(
-                            (n, m) => n + m.price * m.quantity,
-                            0,
-                          ),
-                        )}
-                      </strong>
+                      {materials.reduce((n, m) => n + m.quantity, 0)} piezas
+                      registradas
                     </span>
                   </div>
                   {requiredManual > 0 && (
@@ -1224,6 +1249,7 @@ function App() {
                     selected={selectedSupport}
                     onSelect={selectSupport}
                     onMove={moveSupport}
+                    onTrack={setSupportTrack}
                     onReset={resetSupport}
                     onResetAll={() => patch({ supportOverrides: {} })}
                   />
@@ -1317,135 +1343,37 @@ function App() {
                   </div>
                 </div>
               )}
-              {tab === "method" && (
-                <div className="method-tab">
-                  <div className="table-toolbar">
-                    <div>
-                      <h3>Una referencia clara para cada cálculo</h3>
-                      <p>Reglas visibles y supuestos que puedes revisar.</p>
-                    </div>
-                    <Info size={20} />
-                  </div>
-                  <div className="method-grid">
-                    <article>
-                      <span>01 / FUENTE</span>
-                      <h4>Tu tabla como punto de partida</h4>
-                      <p>
-                        Se transcribieron las configuraciones 1×2 a 1×10 y 2×2 a
-                        2×10 de tu imagen. Las distribuciones irregulares se
-                        separan en tramos de una o dos filas; se suman sus
-                        materiales.
-                      </p>
-                    </article>
-                    <article>
-                      <span>02 / REGLA ESPECIAL</span>
-                      <h4>Riel norte–sur opcional</h4>
-                      <p>
-                        En modo automático los tramos de una fila no llevan riel
-                        norte-sur. Puedes incluirlos o excluirlos desde
-                        Estructura. En tramos dobles se estiman líneas por
-                        separación de apoyos, multiplicadas por piezas
-                        comerciales necesarias para cubrir el fondo inclinado.
-                        Los Beam Clip automáticos dependen de sus cruces con los
-                        rieles este–oeste.
-                      </p>
-                    </article>
-                    <article>
-                      <span>03 / GEOMETRÍA</span>
-                      <h4>La inclinación define las patas</h4>
-                      <p>
-                        Altura = altura frontal + distancia sobre el plano ×
-                        seno del ángulo. Los bloques se dibujan debajo de cada
-                        pata. Las medidas no incluyen herrajes ni determinan el
-                        lastre necesario.
-                      </p>
-                    </article>
-                    <article>
-                      <span>04 / AJUSTES</span>
-                      <h4>Tu criterio tiene la última palabra</h4>
-                      <p>
-                        Las cantidades manuales permanecen fijas. El riel
-                        este-oeste escala como techo(cantidad tabla × longitud
-                        de referencia ÷ longitud comercial); no es un plan de
-                        cortes. La orientación, inclinación y volado modifican
-                        la geometría, sin recalcular herrajes de la tabla.
-                      </p>
-                    </article>
-                  </div>
-                  <div className="warning-box">
-                    <Info size={18} />
-                    <div>
-                      <b>Antes de comprar o construir</b>
-                      {warnings(bed).map((w, i) => (
-                        <p key={i}>{w}</p>
-                      ))}
-                      <p>
-                        El riel este-oeste de la tabla se considera riel
-                        principal: esta interpretación requiere confirmación. El
-                        sobrante lateral sólo modifica la representación del
-                        riel; no incrementa automáticamente la tabla de
-                        materiales. Las patas y bloques se estiman por geometría
-                        de apoyos, independientemente de los herrajes de la
-                        tabla.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    className="text-button"
-                    onClick={() => setShowDetails(!showDetails)}
-                  >
-                    {showDetails ? "Ocultar" : "Ver"} separación de referencia
-                    de la imagen <ChevronDown size={14} />
-                  </button>
-                  {showDetails && (
-                    <div className="reference-table">
-                      <p>
-                        Valores transcritos de la imagen, sin validación del
-                        fabricante:
-                      </p>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Columnas</th>
-                            {EW_REFERENCE_SPACING.map((_, i) => (
-                              <th key={i}>{i + 2}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <th>E–O · 1 fila (m)</th>
-                            {EW_REFERENCE_SPACING.map((n, i) => (
-                              <td key={i}>{n.toFixed(2)}</td>
-                            ))}
-                          </tr>
-                          <tr>
-                            <th>E–O · 2 filas (m)</th>
-                            {EW_REFERENCE_SPACING.map((n, i) => (
-                              <td key={i}>{(i === 0 ? 1.4 : n).toFixed(2)}</td>
-                            ))}
-                          </tr>
-                          <tr>
-                            <th>N–S · 1 fila (m)</th>
-                            {EW_REFERENCE_SPACING.map((_, i) => (
-                              <td key={i}>1.50</td>
-                            ))}
-                          </tr>
-                          <tr>
-                            <th>N–S · 2 filas (m)</th>
-                            {EW_REFERENCE_SPACING.map((_, i) => (
-                              <td key={i}>1.90</td>
-                            ))}
-                          </tr>
-                        </tbody>
-                      </table>
-                      <p>
-                        La separación de apoyos usada en el modelo es editable;
-                        estos valores no se aplican automáticamente.
-                      </p>
-                    </div>
-                  )}
-                </div>
+              {tab === "braces" && (
+                <BraceEditor
+                  bed={bed}
+                  first={braceFirst}
+                  onFirst={setBraceFirst}
+                  onAdd={addBrace}
+                  onRemove={(id) =>
+                    patch({
+                      manualBraces: braceConnections(bed).filter(
+                        (c) => c.id !== id,
+                      ),
+                    })
+                  }
+                  onReverse={(id) =>
+                    patch({
+                      manualBraces: braceConnections(bed).map((c) =>
+                        c.id === id ? { ...c, reverse: !c.reverse } : c,
+                      ),
+                    })
+                  }
+                  onMode={() => changeMode("brace")}
+                />
+              )}
+              {tab === "placement" && (
+                <BedPlacement
+                  bed={bed}
+                  pose={currentPose}
+                  onMove={(x, z) => moveBed(bed.id, x, z)}
+                  onRotate={(azimuth) => patch({ azimuth })}
+                  onDrag={() => changeMode("bed")}
+                />
               )}
             </section>
           </div>
@@ -1472,9 +1400,9 @@ function App() {
             />
           </label>
           <p>
-            <Info size={14} /> Herramienta de estimación preliminar.
+            <Info size={14} /> Proyecto guardado en este navegador.
             <br />
-            Consulta las reglas antes de usar los resultados.
+            Descarga una copia para conservar tus cambios.
           </p>
         </section>
         <footer className="app-footer">
@@ -1545,7 +1473,7 @@ function App() {
                 onClick={() => {
                   if (importPending.current) {
                     setProject(importPending.current);
-                    setSelected(importPending.current.beds[0].id);
+                    selectBed(importPending.current.beds[0].id);
                   }
                   setImportName("");
                   importPending.current = null;

@@ -6,6 +6,7 @@ import {
   panelRotation,
   supports,
   supportNeighbours,
+  supportTracks,
 } from "../lib/model";
 import type { Bed, Support } from "../lib/model";
 import Field from "./Field";
@@ -72,8 +73,8 @@ export function PanelEditor({
         </button>
       </div>
       <p className="help-text">
-        Las celdas se amplían según el giro para mantener la separación entre
-        paneles. La inclinación de la cama se conserva.
+        Cada fila conserva sus paneles juntos. Girar otra fila no cambia sus
+        posiciones ni sus rieles.
       </p>
     </div>
   );
@@ -83,6 +84,7 @@ export function LegEditor({
   selected,
   onSelect,
   onMove,
+  onTrack,
   onReset,
   onResetAll,
 }: {
@@ -90,30 +92,27 @@ export function LegEditor({
   selected?: string;
   onSelect: (id: string) => void;
   onMove: (id: string, x: number, z: number) => void;
+  onTrack: (id: string, track: string) => void;
   onReset: (id: string) => void;
   onResetAll: () => void;
 }) {
   const all = supports(bed),
     leg = all.find((s) => s.id === selected) || all[0],
-    d = dimensions(bed);
+    tracks = supportTracks(bed);
   if (!leg)
     return (
       <div className="individual-editor">
-        No hay patas: repón algún panel para generar apoyos.
+        Repón un panel para generar patas.
       </div>
     );
-  const neighbours = supportNeighbours(bed, leg.id);
-  const maxNS = neighbours.opposite
-    ? leg.line === 0
-      ? d.depth / 2 - neighbours.opposite.z
-      : neighbours.opposite.z + d.depth / 2
-    : 0;
+  const track = tracks.find((t) => t.id === leg.trackId)!,
+    near = supportNeighbours(bed, leg.id).previous;
   return (
     <div className="individual-editor">
       <div className="editor-title">
         <Move size={17} />
-        <b>Posición individual de la pata</b>
-        <span>{leg.moved ? "Ajuste manual" : "Posición automática"}</span>
+        <b>Pata sobre su riel</b>
+        <span>Eje {leg.axis === "x" ? "X · Este–oeste" : "Y · Norte–sur"}</span>
       </div>
       <div className="individual-fields">
         <label className="field">
@@ -125,9 +124,22 @@ export function LegEditor({
           >
             {all.map((s, i) => (
               <option key={s.id} value={s.id}>
-                P-{String(i + 1).padStart(2, "0")} · fila {s.row + 1} ·{" "}
-                {s.line === 0 ? "sur" : "norte"}
+                P-{String(i + 1).padStart(2, "0")} · fila {s.row + 1}
                 {s.moved ? " · manual" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Riel de desplazamiento</span>
+          <select
+            aria-label="Riel de desplazamiento"
+            value={leg.trackId}
+            onChange={(e) => onTrack(leg.id, e.target.value)}
+          >
+            {tracks.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
               </option>
             ))}
           </select>
@@ -135,50 +147,42 @@ export function LegEditor({
         <Field
           label="Posición de pata E–O"
           value={Number(leg.x.toFixed(3))}
-          onChange={(n) => onMove(leg.id, n, leg.z)}
-          min={-d.width / 2}
-          max={d.width / 2}
-          step={0.01}
+          onChange={(x) => onMove(leg.id, x, leg.z)}
+          min={leg.axis === "x" ? track.start : leg.x}
+          max={leg.axis === "x" ? track.end : leg.x}
+          disabled={leg.axis !== "x"}
           unit="m"
         />
         <Field
           label="Posición de pata N–S"
           value={Number(leg.z.toFixed(3))}
-          onChange={(n) => onMove(leg.id, leg.x, n)}
-          min={-d.depth / 2}
-          max={d.depth / 2}
-          step={0.01}
+          onChange={(z) => onMove(leg.id, leg.x, z)}
+          min={leg.axis === "z" ? track.start : leg.z}
+          max={leg.axis === "z" ? track.end : leg.z}
+          disabled={leg.axis !== "z"}
           unit="m"
         />
         <div className="leg-height">
-          <span>Altura recalculada</span>
+          <span>Longitud de la pata</span>
           <b>{leg.length.toFixed(3)} m</b>
         </div>
       </div>
       <div className="individual-fields spacing-fields">
-        {neighbours.previous && (
+        {near && (
           <Field
-            label="Separación con pata anterior E–O"
-            value={Number((leg.x - neighbours.previous.x).toFixed(3))}
-            onChange={(n) => onMove(leg.id, neighbours.previous!.x + n, leg.z)}
-            min={0.05}
-            max={d.width / 2 - neighbours.previous.x}
-            unit="m"
-          />
-        )}
-        {neighbours.opposite && maxNS >= 0.05 && (
-          <Field
-            label="Separación con pata opuesta N–S"
-            value={Number(Math.abs(leg.z - neighbours.opposite.z).toFixed(3))}
-            onChange={(n) =>
+            label="Separación con pata anterior sobre el riel"
+            value={Number(
+              (leg.axis === "x" ? leg.x - near.x : leg.z - near.z).toFixed(3),
+            )}
+            onChange={(v) =>
               onMove(
                 leg.id,
-                leg.x,
-                neighbours.opposite!.z + (leg.line === 0 ? n : -n),
+                leg.axis === "x" ? near.x + v : leg.x,
+                leg.axis === "z" ? near.z + v : leg.z,
               )
             }
-            min={0.05}
-            max={maxNS}
+            min={0.02}
+            max={track.end - (leg.axis === "x" ? near.x : near.z)}
             unit="m"
           />
         )}
@@ -198,9 +202,8 @@ export function LegEditor({
         </button>
       </div>
       <p className="help-text">
-        También puedes arrastrar una pata en el modelo. X positivo = este; Z
-        positivo = sur. Sólo se mueve la pata seleccionada y su bloque; las
-        otras conservan su posición.
+        Elige el riel de la pata. Al arrastrarla sólo se desplaza a lo largo de
+        ese eje y permanece unida al riel.
       </p>
     </div>
   );

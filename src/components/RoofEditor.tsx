@@ -1,21 +1,34 @@
 import { useRef, useState } from "react";
-import { ImagePlus, Trash2, LoaderCircle } from "lucide-react";
+import { ImagePlus, Trash2, LoaderCircle, Ruler } from "lucide-react";
 import type { RoofImage } from "../lib/model";
 import { prepareRoofImage } from "../lib/roof";
 import Field from "./Field";
+import RoofCalibration from "./RoofCalibration";
 export default function RoofEditor({
   roof,
   onChange,
   onError,
+  panelWidth,
+  panelLength,
 }: {
   roof?: RoofImage;
   onChange: (roof: RoofImage | undefined) => void;
   onError: (message: string) => void;
+  panelWidth: number;
+  panelLength: number;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [calibrating, setCalibrating] = useState(false);
   const patch = (next: Partial<RoofImage>) => {
-    if (roof) onChange({ ...roof, ...next });
+    if (roof)
+      onChange({
+        ...roof,
+        ...next,
+        ...(next.width !== undefined || next.length !== undefined
+          ? { references: [] }
+          : {}),
+      });
   };
   async function load(file?: File) {
     if (!file) return;
@@ -25,6 +38,8 @@ export default function RoofEditor({
       const width = roof?.width ?? 12;
       onChange({
         dataUrl: image.dataUrl,
+        imageAspect: image.aspect,
+        references: [],
         name: image.name,
         width,
         length: Math.max(0.5, Math.min(200, width / image.aspect)),
@@ -71,10 +86,28 @@ export default function RoofEditor({
         <>
           <img
             className="roof-thumbnail"
+            onLoad={(e) => {
+              if (!roof.imageAspect)
+                patch({
+                  imageAspect:
+                    e.currentTarget.naturalWidth /
+                    e.currentTarget.naturalHeight,
+                });
+            }}
             src={roof.dataUrl}
             alt="Foto de techo cargada"
           />
           <small className="roof-filename">{roof.name}</small>
+          <button
+            className="button outline roof-upload"
+            onClick={() => setCalibrating(true)}
+          >
+            <Ruler size={16} /> Escalar con medidas de referencia
+          </button>
+          <p className="help-text roof-help">
+            {roof.references?.length ?? 0} referencias · escala actual{" "}
+            {roof.width.toFixed(2)} × {roof.length.toFixed(2)} m
+          </p>
           <div className="field-grid">
             <Field
               label="Ancho real del techo"
@@ -142,6 +175,15 @@ export default function RoofEditor({
           del techo.
         </p>
       </div>
+      {calibrating && roof && (
+        <RoofCalibration
+          roof={roof}
+          panelWidth={panelWidth}
+          panelLength={panelLength}
+          onApply={onChange}
+          onClose={() => setCalibrating(false)}
+        />
+      )}
     </div>
   );
 }

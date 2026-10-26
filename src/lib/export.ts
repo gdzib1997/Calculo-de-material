@@ -1,186 +1,138 @@
 import {
   aggregate,
-  activeCount,
   calculate,
+  activeCount,
   dimensions,
   supports,
-  warnings,
+  braces,
+  memberCuts,
+  panelPlacement,
   panelRotation,
   isActive,
+  bedPose,
 } from "./model";
-import type { Project, MaterialId, Bed } from "./model";
+import type { Project, Bed } from "./model";
 import { download, safeName } from "./storage";
 const date = () =>
-  new Date().toLocaleString("es-MX", { timeZone: "America/Mexico_City" }) +
-  " (Ciudad de México)";
-const money = (n: number) =>
-  new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(
-    n,
-  );
-function materialRows(p: Project, prices: Partial<Record<MaterialId, number>>) {
-  return aggregate(p, prices).map((m) => [
+  new Date().toLocaleString("es-MX", { timeZone: "America/Mexico_City" });
+const headers = ["Material", "Cantidad", "Unidad", "Origen"];
+const materialRows = (p: Project) =>
+  aggregate(p).map((m) => [
     m.name,
     String(m.quantity),
     m.unit,
     m.overridden ? "Manual / mixto" : "Automático",
-    money(m.price),
-    money(m.price * m.quantity),
   ]);
-}
-function placementSummary(b: Bed) {
-  return `Separación E–O máxima: ${b.supportSpacing} m; separación N–S por fila: ${b.supportSpacingNS ?? "automática"} m. Patas con posición manual: ${supports(b).filter((s) => s.moved).length}. Paneles con giro individual: ${Object.values(b.panelRotations || {}).filter((n) => n !== 0).length}. Riel N–S: ${b.nsMode ?? "auto"}; Beam Clip por cruce: ${b.beamClipsPerCrossing ?? 1}; contravientos: ${b.bracingEnabled ? `${b.bracingCount ?? 2} diagonales, eje ${b.bracingAxis ?? "ew"}, longitud ${b.bracingLength ?? "geométrica"}` : "no"}.`;
-}
-function roofSummary(p: Project) {
+function roofText(p: Project) {
   return p.roof
-    ? `Imagen de techo: ${p.roof.name}; ${p.roof.width} × ${p.roof.length} m; posición X/Z ${p.roof.x}/${p.roof.z} m; giro ${p.roof.rotation}°; opacidad ${Math.round(p.roof.opacity * 100)}%.`
+    ? `Techo: ${p.roof.name}; escala ${p.roof.width.toFixed(3)} × ${p.roof.length.toFixed(3)} m; posición E–O / N–S ${p.roof.x} / ${p.roof.z} m; giro ${p.roof.rotation}°. Referencias: ${(p.roof.references ?? []).map((r, i) => `${i + 1}: ${r.distance} m`).join("; ") || "escala manual"}.`
     : "Sin imagen de techo.";
 }
-function rotatedRows(b: Bed) {
-  return Object.entries(b.panelRotations || {})
-    .filter(([, angle]) => angle !== 0)
-    .map(([key, angle]) => {
-      const [r, c] = key.split(":").map(Number);
-      return [
-        `${r + 1}`,
-        `${c + 1}`,
-        `${angle}°`,
-        isActive(b, r, c) ? "Activo" : "Retirado",
-      ];
-    });
-}
-function bedSummary(p: Project) {
-  return p.beds.map((b) => {
-    const d = dimensions(b);
+function bedRows(p: Project) {
+  return p.beds.map((b, i) => {
+    const d = dimensions(b),
+      pose = bedPose(p, i);
     return [
       b.name,
       `${b.rows} × ${b.columns}`,
       String(activeCount(b)),
       `${b.angle}°`,
-      `${d.width.toFixed(2)} × ${d.depth.toFixed(2)} m`,
-      `${b.frontHeight.toFixed(3)} / ${d.rearHeight.toFixed(3)} m`,
-      b.bases ? "Sí" : "No",
+      `${d.width.toFixed(3)} × ${d.depth.toFixed(3)} m`,
+      `${pose.x.toFixed(3)} / ${pose.z.toFixed(3)} m`,
+      `${pose.rotation}°`,
     ];
   });
 }
-const headers = [
-  "Material",
-  "Cantidad",
-  "Unidad",
-  "Origen",
-  "P. unitario MXN",
-  "Importe MXN",
-];
-export async function exportExcel(
-  p: Project,
-  prices: Partial<Record<MaterialId, number>>,
-) {
+function braceRows(b: Bed) {
+  const all = supports(b);
+  return braces(b).map((c) => [
+    String(all.findIndex((s) => s.id === c.fromId) + 1),
+    String(all.findIndex((s) => s.id === c.toId) + 1),
+    c.axis === "ew" ? "E–O" : "N–S",
+    c.length.toFixed(3),
+    c.axis === "ew" ? "2 L-Foot" : "2 Tilt Plate",
+    "4 T-Bolt",
+  ]);
+}
+export async function exportExcel(p: Project) {
   const { default: ExcelJS } = await import("exceljs");
-  const { Workbook } = ExcelJS;
-  const wb = new Workbook();
-  wb.creator = "Unirack Studio";
-  wb.created = new Date();
-  const ws = wb.addWorksheet("Materiales");
-  ws.addRow([p.name]);
-  ws.addRow(["Cliente", p.customer || "Sin especificar"]);
-  ws.addRow(["Generado", date()]);
-  ws.addRow(["Moneda", "MXN"]);
-  ws.addRow([]);
-  ws.addRow(headers);
-  aggregate(p, prices).forEach((m, i) =>
-    ws.addRow([
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Unirack Studio";
+  workbook.created = new Date();
+  const materials = workbook.addWorksheet("Materiales");
+  materials.addRow([p.name]);
+  materials.addRow(["Cliente / obra", p.customer]);
+  materials.addRow(["Fecha", date()]);
+  materials.addRow([]);
+  materials.addRow(headers);
+  aggregate(p).forEach((m) =>
+    materials.addRow([
       m.name,
       m.quantity,
       m.unit,
       m.overridden ? "Manual / mixto" : "Automático",
-      m.price,
-      { formula: `B${i + 7}*E${i + 7}`, result: m.quantity * m.price },
     ]),
   );
-  const total = aggregate(p, prices).reduce(
-    (s, m) => s + m.quantity * m.price,
-    0,
-  );
-  ws.addRow([
-    "TOTAL",
-    "",
-    "",
-    "",
-    "",
-    { formula: `SUM(F7:F${6 + aggregate(p, prices).length})`, result: total },
-  ]);
-  ws.autoFilter = `A6:F${6 + aggregate(p, prices).length}`;
-  ws.views = [{ state: "frozen", ySplit: 6 }];
-  ws.columns = [
-    { width: 43 },
+  materials.columns = [
+    { width: 48 },
+    { width: 15 },
     { width: 14 },
-    { width: 12 },
-    { width: 20 },
-    { width: 22 },
-    { width: 22 },
+    { width: 24 },
   ];
-  ws.getColumn(5).numFmt = '"$"#,##0.00';
-  ws.getColumn(6).numFmt = '"$"#,##0.00';
-  const config = wb.addWorksheet("Camas");
-  config.addRow([
+  materials.views = [{ state: "frozen", ySplit: 5 }];
+  materials.autoFilter = `A5:D${5 + aggregate(p).length}`;
+  const beds = workbook.addWorksheet("Camas");
+  beds.addRow([
     "Cama",
-    "Filas × columnas",
+    "Distribución",
     "Paneles activos",
     "Inclinación",
-    "Huella ancho × fondo",
-    "Pata frontal / trasera",
-    "Con bloques",
-    "Modo N–S",
-    "Separación E–O máxima (m)",
-    "Separación N–S por fila (m)",
-    "Beam Clip por cruce",
-    "Contravientos",
-    "Diagonales",
-    "Eje de contravientos",
-    "Longitud considerada (m)",
+    "Huella",
+    "Posición E–O / N–S (m)",
+    "Giro en techo",
+    "Riel comercial (m)",
+    "N–S",
+    "Separación máxima E–O",
+    "Separación N–S por fila",
   ]);
-  bedSummary(p).forEach((row, i) => {
-    const b = p.beds[i];
-    config.addRow([
-      ...row,
-      b.nsMode ?? "auto",
-      b.supportSpacing,
-      b.supportSpacingNS ?? "automática",
-      b.beamClipsPerCrossing ?? 1,
-      b.bracingEnabled ? "Sí" : "No",
-      b.bracingEnabled ? (b.bracingCount ?? 2) : 0,
-      b.bracingAxis ?? "ew",
-      b.bracingLength ?? "geométrica",
-    ]);
-  });
-  config.columns.forEach((c) => (c.width = 27));
-  const detail = wb.addWorksheet("Detalle por cama");
+  bedRows(p).forEach((r, i) =>
+    beds.addRow([
+      ...r,
+      p.beds[i].railLength,
+      p.beds[i].nsMode ?? "auto",
+      p.beds[i].supportSpacing,
+      p.beds[i].supportSpacingNS ?? "automática",
+    ]),
+  );
+  const detail = workbook.addWorksheet("Detalle por cama");
   detail.addRow(["Cama", ...headers]);
   for (const b of p.beds)
-    calculate(b, prices).forEach((m) =>
+    calculate(b).forEach((m) =>
       detail.addRow([
         b.name,
         m.name,
         m.quantity,
         m.unit,
         m.overridden ? "Manual" : "Automático",
-        m.price,
-        m.quantity * m.price,
       ]),
     );
-  detail.columns.forEach((c) => (c.width = 26));
-  const legs = wb.addWorksheet("Patas y bloques");
+  const legs = workbook.addWorksheet("Patas y bloques");
   legs.addRow([
     "Cama",
     "Pata",
     "Fila",
-    "Posición X (m)",
-    "Posición Z (m)",
-    "Altura vertical (m)",
-    "Bloque ancho (m)",
-    "Bloque fondo (m)",
-    "Bloque alto (m)",
-    "ID estable de pata",
-    "Posición",
+    "E–O local (m)",
+    "N–S local (m)",
+    "Longitud (m)",
+    "Ancho bloque",
+    "Fondo bloque",
+    "Alto bloque",
+    "ID de pata",
+    "Riel",
+    "Eje",
+    "Herraje inferior",
+    "Herraje superior",
+    "T-Bolt de la pata",
   ]);
   for (const b of p.beds)
     supports(b).forEach((s, i) =>
@@ -195,26 +147,34 @@ export async function exportExcel(
         b.bases ? b.baseDepth : 0,
         b.bases ? b.baseHeight : 0,
         s.id,
-        s.moved ? "Manual" : "Automática",
+        s.trackId,
+        s.axis === "x" ? "E–O" : "N–S",
+        "L-Foot",
+        "Tilt Plate",
+        3,
       ]),
     );
-  legs.columns.forEach((c) => (c.width = 23));
-  const panels = wb.addWorksheet("Paneles");
+  const panels = workbook.addWorksheet("Paneles");
   panels.addRow([
     "Cama",
     "Fila",
     "Columna",
     "Estado",
     "Giro individual (°)",
-    "Ancho del panel (m)",
-    "Largo del panel (m)",
-    "Centro X (m)",
-    "Distancia desde frente sobre el plano (m)",
+    "Ancho de panel",
+    "Largo de panel",
+    "E–O local",
+    "N–S local",
+    "E–O en techo",
+    "N–S en techo",
   ]);
-  for (const b of p.beds) {
-    const d = dimensions(b);
+  for (const [i, b] of p.beds.entries()) {
+    const d = dimensions(b),
+      pose = bedPose(p, i),
+      a = (pose.rotation * Math.PI) / 180;
     for (let r = 0; r < b.rows; r++)
-      for (let c = 0; c < b.columns; c++)
+      for (let c = 0; c < b.columns; c++) {
+        const q = panelPlacement(b, r, c);
         panels.addRow([
           b.name,
           r + 1,
@@ -223,64 +183,90 @@ export async function exportExcel(
           panelRotation(b, r, c),
           d.w,
           d.l,
-          d.columnCenters[c] - d.width / 2,
-          d.rowCenters[r],
+          q.x,
+          q.z,
+          pose.x + q.x * Math.cos(a) - q.z * Math.sin(a),
+          pose.z + q.x * Math.sin(a) + q.z * Math.cos(a),
         ]);
+      }
   }
-  panels.columns.forEach((c) => (c.width = 24));
+  const diagonal = workbook.addWorksheet("Contravientos");
+  diagonal.addRow([
+    "Cama",
+    "Pata origen",
+    "Pata destino",
+    "Eje",
+    "Longitud (m)",
+    "Herrajes",
+    "Tornillos",
+  ]);
+  for (const b of p.beds)
+    braceRows(b).forEach((row) => diagonal.addRow([b.name, ...row]));
+  const cuts = workbook.addWorksheet("Perfiles");
+  cuts.addRow([
+    "Cama",
+    "Miembro",
+    "Tipo",
+    "Longitud (m)",
+    "Piezas comerciales",
+    "Longitud comercial (m)",
+  ]);
+  for (const b of p.beds)
+    memberCuts(b).forEach((c) =>
+      cuts.addRow([
+        b.name,
+        c.id,
+        c.kind === "ew"
+          ? "Riel E–O"
+          : c.kind === "ns"
+            ? "Riel N–S"
+            : "Contraviento",
+        c.length,
+        c.pieces,
+        b.railLength,
+      ]),
+    );
+  const library = workbook.addWorksheet("Biblioteca de paneles");
+  library.addRow(["Modelo", "Ancho (m)", "Largo (m)"]);
+  (p.panelLibrary ?? []).forEach((v) =>
+    library.addRow([v.name, v.width, v.length]),
+  );
   if (p.roof) {
-    const roof = wb.addWorksheet("Techo");
-    roof.addRow(["Imagen del techo", p.roof.name]);
+    const roof = workbook.addWorksheet("Techo");
+    roof.addRow(["Foto", p.roof.name]);
     roof.addRow(["Ancho (m)", p.roof.width]);
     roof.addRow(["Largo (m)", p.roof.length]);
-    roof.addRow(["Posición X (m)", p.roof.x]);
-    roof.addRow(["Posición Z (m)", p.roof.z]);
+    roof.addRow(["Posición E–O", p.roof.x]);
+    roof.addRow(["Posición N–S", p.roof.z]);
     roof.addRow(["Giro (°)", p.roof.rotation]);
-    roof.addRow(["Opacidad", p.roof.opacity]);
-    const imageId = wb.addImage({ base64: p.roof.dataUrl, extension: "jpeg" });
-    roof.addImage(imageId, {
-      tl: { col: 0, row: 9 },
-      ext: { width: 600, height: 360 },
-    });
-    roof.columns = [{ width: 35 }, { width: 55 }];
+    for (const [i, r] of (p.roof.references ?? []).entries())
+      roof.addRow([`Referencia ${i + 1} (m)`, r.distance]);
+    if (
+      p.roof.dataUrl.startsWith("data:image/jpeg") ||
+      p.roof.dataUrl.startsWith("data:image/png")
+    ) {
+      const id = workbook.addImage({
+        base64: p.roof.dataUrl,
+        extension: p.roof.dataUrl.startsWith("data:image/png") ? "png" : "jpeg",
+      });
+      roof.addImage(id, {
+        tl: { col: 0, row: 10 },
+        ext: { width: 600, height: 350 },
+      });
+    }
+    roof.columns = [{ width: 35 }, { width: 65 }];
   }
-  const library = wb.addWorksheet("Biblioteca de paneles");
-  library.addRow(["Modelo", "Ancho (m)", "Largo (m)"]);
-  for (const panel of p.panelLibrary || [])
-    library.addRow([panel.name, panel.width, panel.length]);
-  library.columns = [{ width: 45 }, { width: 18 }, { width: 18 }];
-  const notes = wb.addWorksheet("Supuestos");
-  notes.addRow(["Origen y límites del cálculo"]);
-  notes.addRow([roofSummary(p)]);
-  notes.addRow([
-    "Referencia: imagen aportada por el usuario; manuales Unirac Ascender sin verificar.",
-  ]);
-  notes.addRow([
-    "Los precios no capturados se consideran 0. Total sin impuestos, flete ni mano de obra.",
-  ]);
-  for (const b of p.beds) {
-    notes.addRow([b.name]);
-    notes.addRow([placementSummary(b)]);
-    warnings(b).forEach((w) => notes.addRow([w]));
-    notes.addRow([
-      `Panel ${b.panelWidth} × ${b.panelLength} m; separación ${b.gap} m; riel comercial ${b.railLength} m; riel de referencia supuesto ${b.referenceRailLength} m; volado ${b.overhang} m; separación de apoyos ${b.supportSpacing} m.`,
-    ]);
-  }
-  notes.getColumn(1).width = 120;
-  notes.eachRow((r) => {
-    r.alignment = { wrapText: true, vertical: "top" };
-    r.height = 44;
-  });
-  for (const sheet of [ws, config, detail, legs, library, panels]) {
-    const hr = sheet.getRow(sheet === ws ? 6 : 1);
-    hr.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    hr.fill = {
+  for (const sheet of workbook.worksheets) {
+    if (sheet !== materials) sheet.columns.forEach((c) => (c.width = 26));
+    const head = sheet.getRow(sheet === materials ? 5 : 1);
+    head.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    head.fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { argb: "FF244A40" },
     };
   }
-  const buffer = await wb.xlsx.writeBuffer();
+  const buffer = await workbook.xlsx.writeBuffer();
   download(
     new Blob([buffer as ArrayBuffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -290,143 +276,138 @@ export async function exportExcel(
 }
 export async function exportPDF(
   p: Project,
-  prices: Partial<Record<MaterialId, number>>,
   image?: string,
   imageTitle?: string,
 ) {
   const { jsPDF } = await import("jspdf");
   const { default: autoTable } = await import("jspdf-autotable");
   const pdf = new jsPDF();
-  pdf.setFontSize(23);
   pdf.setTextColor("#244a40");
+  pdf.setFontSize(22);
   pdf.text("UNIRACK / STUDIO", 14, 23);
   pdf.setFontSize(15);
-  const titleLines = pdf.splitTextToSize(p.name, 182);
-  pdf.text(titleLines, 14, 35);
-  const metaY = 35 + (titleLines.length - 1) * 6 + 8;
+  const name = pdf.splitTextToSize(p.name, 180);
+  pdf.text(name, 14, 35);
+  let y = 42 + (name.length - 1) * 6;
   pdf.setFontSize(9);
-  pdf.setTextColor("#555555");
-  const metaLines = pdf.splitTextToSize(
-    `Cliente: ${p.customer || "Sin especificar"} | ${date()}`,
-    182,
+  const info = pdf.splitTextToSize(
+    `Cliente: ${p.customer || "Sin especificar"} · ${date()}`,
+    180,
   );
-  pdf.text(metaLines, 14, metaY);
-  let y = metaY + metaLines.length * 4 + 6;
-  pdf.text("Estimación preliminar de materiales · Moneda: MXN", 14, y);
-  y += 6;
+  pdf.text(info, 14, y);
+  y += info.length * 4 + 6;
   if (image) {
     pdf.addImage(image, "PNG", 14, y, 182, 85);
     y += 91;
-    pdf.setFontSize(8);
     pdf.text(
-      `Vista 3D: ${imageTitle || "cama seleccionada"}. El reporte incluye todas las camas.`,
+      pdf.splitTextToSize(
+        `Vista actual del proyecto. Cama seleccionada: ${imageTitle ?? ""}.`,
+        180,
+      ),
       14,
       y,
     );
-    y += 6;
+    y += 10;
   }
   autoTable(pdf, {
     startY: y,
     head: [headers],
-    body: materialRows(p, prices),
-    styles: { fontSize: 8 },
+    body: materialRows(p),
+    styles: { fontSize: 9 },
     headStyles: { fillColor: [36, 74, 64] },
   });
-  const total = aggregate(p, prices).reduce(
-    (s, m) => s + m.quantity * m.price,
-    0,
-  );
   pdf.addPage();
-  pdf.setFontSize(15);
-  pdf.text("Configuración de camas", 14, 20);
+  pdf.setFontSize(14);
+  pdf.text("Camas del proyecto", 14, 20);
   autoTable(pdf, {
     startY: 27,
     head: [
       [
         "Cama",
-        "Distribución",
+        "Filas × columnas",
         "Paneles",
-        "Ángulo",
+        "Inclinación",
         "Huella",
-        "Patas F / T",
-        "Bases",
+        "E–O / N–S",
+        "Giro",
       ],
     ],
-    body: bedSummary(p),
+    body: bedRows(p),
     styles: { fontSize: 8 },
     headStyles: { fillColor: [36, 74, 64] },
   });
   for (const b of p.beds) {
     pdf.addPage();
     pdf.setFontSize(14);
-    pdf.text(`${b.name} · Patas y supuestos`, 14, 20);
-    const note = `Panel: ${b.panelWidth} × ${b.panelLength} m. Riel: ${b.railLength} m (referencia supuesta: ${b.referenceRailLength} m). Volado: ${b.overhang} m. Bloques: ${b.bases ? `${b.baseWidth} × ${b.baseDepth} × ${b.baseHeight} m` : "sin bloques"}.`;
-    pdf.setFontSize(9);
-    pdf.text(pdf.splitTextToSize(note, 182), 14, 28);
+    pdf.text(`${b.name} · Patas`, 14, 20);
     autoTable(pdf, {
-      startY: 45,
-      head: [["Pata", "Fila", "X (m)", "Z (m)", "Altura vertical (m)"]],
+      startY: 28,
+      head: [
+        ["Pata", "Fila", "E–O (m)", "N–S (m)", "Longitud (m)", "Riel / eje"],
+      ],
       body: supports(b).map((s, i) => [
         i + 1,
         s.row + 1,
         s.x.toFixed(3),
         s.z.toFixed(3),
         s.length.toFixed(3),
+        s.axis === "x" ? "E–O" : "N–S",
       ]),
       styles: { fontSize: 8 },
       headStyles: { fillColor: [36, 74, 64] },
     });
-    pdf.addPage();
-    pdf.setFontSize(13);
-    pdf.text(`${b.name} · Alcance del cálculo`, 14, 20);
-    pdf.setFontSize(10);
-    let line = 32;
-    for (const w of [placementSummary(b), ...warnings(b)]) {
-      const text = pdf.splitTextToSize(w, 180);
-      if (line + text.length * 5 + 8 > 275) {
-        pdf.addPage();
-        line = 22;
-        pdf.setFontSize(10);
-      }
-      pdf.text(text, 14, line);
-      line += text.length * 5 + 8;
-    }
-  }
-  for (const b of p.beds) {
-    const rows = rotatedRows(b);
-    if (rows.length) {
+    const connections = braceRows(b);
+    if (connections.length) {
       pdf.addPage();
       pdf.setFontSize(14);
-      pdf.text(`${b.name} · Giros individuales`, 14, 20);
+      pdf.text(`${b.name} · Contravientos`, 14, 20);
       autoTable(pdf, {
         startY: 28,
-        head: [["Fila", "Columna", "Giro", "Estado"]],
-        body: rows,
+        head: [
+          [
+            "Pata origen",
+            "Pata destino",
+            "Eje",
+            "Longitud",
+            "Herrajes",
+            "Tornillos",
+          ],
+        ],
+        body: connections,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [36, 74, 64] },
+      });
+    }
+    const rotations = Object.entries(b.panelRotations ?? {}).filter(
+      ([, a]) => a !== 0,
+    );
+    if (rotations.length) {
+      pdf.addPage();
+      pdf.setFontSize(14);
+      pdf.text(`${b.name} · Paneles girados`, 14, 20);
+      autoTable(pdf, {
+        startY: 28,
+        head: [["Fila", "Columna", "Giro"]],
+        body: rotations.map(([key, a]) => {
+          const [r, c] = key.split(":").map(Number);
+          return [r + 1, c + 1, `${a}°`];
+        }),
         styles: { fontSize: 9 },
         headStyles: { fillColor: [36, 74, 64] },
       });
     }
   }
   pdf.addPage();
-  pdf.setFontSize(12);
-  pdf.text("Referencia de techo", 14, 20);
+  pdf.setFontSize(14);
+  pdf.text("Techo de referencia", 14, 20);
   pdf.setFontSize(10);
-  pdf.text(pdf.splitTextToSize(roofSummary(p), 180), 14, 30);
-  pdf.addPage();
-  pdf.setFontSize(15);
-  pdf.text(`Total estimado: ${money(total)}`, 14, 22);
-  pdf.setFontSize(10);
-  pdf.text(
-    "Sin impuestos, flete ni mano de obra. Los precios sin capturar se consideran 0.",
-    14,
-    34,
-  );
+  pdf.text(pdf.splitTextToSize(roofText(p), 180), 14, 31);
   for (let i = 1; i <= pdf.getNumberOfPages(); i++) {
     pdf.setPage(i);
     pdf.setFontSize(8);
-    pdf.setTextColor("#777777");
+    pdf.setTextColor("#7b8c74");
     pdf.text(
-      `Unirack Studio · Estimación preliminar · ${i} / ${pdf.getNumberOfPages()}`,
+      `Unirack Studio · Estimación de materiales · ${i} / ${pdf.getNumberOfPages()}`,
       14,
       289,
     );
@@ -435,7 +416,6 @@ export async function exportPDF(
 }
 export async function exportWord(
   p: Project,
-  prices: Partial<Record<MaterialId, number>>,
   image?: string,
   imageTitle?: string,
 ) {
@@ -452,14 +432,14 @@ export async function exportWord(
     ImageRun,
   } = await import("docx");
   const para = (text: string) =>
-    new Paragraph({ children: [new TextRun(text)], spacing: { after: 140 } });
+    new Paragraph({ text, spacing: { after: 140 } });
   const table = (rows: string[][]) =>
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
       rows: rows.map(
-        (row, i) =>
+        (r, i) =>
           new TableRow({
-            children: row.map(
+            children: r.map(
               (text) =>
                 new TableCell({
                   shading: i === 0 ? { fill: "E5EDE8" } : undefined,
@@ -475,15 +455,16 @@ export async function exportWord(
           }),
       ),
     });
-  const children = [
+  const children: (
+    InstanceType<typeof Paragraph> | InstanceType<typeof Table>
+  )[] = [
     new Paragraph({ text: p.name, heading: HeadingLevel.TITLE }),
     para(`Cliente: ${p.customer || "Sin especificar"} · ${date()}`),
-    para("UNIRACK STUDIO · Estimación preliminar de materiales. Moneda: MXN."),
+    para("UNIRACK STUDIO · Estimación de materiales"),
   ];
-  children.push(para(roofSummary(p)));
   if (image) {
-    const bytes = Uint8Array.from(atob(image.split(",")[1]), (c) =>
-      c.charCodeAt(0),
+    const bytes = Uint8Array.from(atob(image.split(",")[1]), (v) =>
+      v.charCodeAt(0),
     );
     children.push(
       new Paragraph({
@@ -495,22 +476,13 @@ export async function exportWord(
           }),
         ],
       }),
+      para(`Vista del proyecto. Cama seleccionada: ${imageTitle ?? ""}.`),
     );
   }
-  if (image)
-    children.push(
-      para(
-        `Vista 3D: ${imageTitle || "cama seleccionada"}. El reporte incluye todas las camas.`,
-      ),
-    );
-  const content: ((typeof children)[number] | InstanceType<typeof Table>)[] = [
-    ...children,
-    table([headers, ...materialRows(p, prices)]),
-    para(
-      `Total estimado: ${money(aggregate(p, prices).reduce((s, m) => s + m.quantity * m.price, 0))}. Sin impuestos, flete ni mano de obra.`,
-    ),
+  children.push(
+    table([headers, ...materialRows(p)]),
     new Paragraph({
-      text: "Configuración de camas",
+      text: "Camas del proyecto",
       heading: HeadingLevel.HEADING_1,
     }),
     table([
@@ -518,37 +490,65 @@ export async function exportWord(
         "Cama",
         "Distribución",
         "Paneles",
-        "Ángulo",
+        "Inclinación",
         "Huella",
-        "Patas F / T",
-        "Bases",
+        "E–O / N–S",
+        "Giro",
       ],
-      ...bedSummary(p),
+      ...bedRows(p),
     ]),
-  ];
+    para(roofText(p)),
+  );
   for (const b of p.beds) {
-    content.push(
-      new Paragraph({ text: b.name, heading: HeadingLevel.HEADING_1 }),
-      para(
-        `Panel ${b.panelWidth} × ${b.panelLength} m · Riel ${b.railLength} m (referencia supuesta ${b.referenceRailLength} m) · Volado ${b.overhang} m · Apoyos cada ${b.supportSpacing} m. Bloques: ${b.bases ? `${b.baseWidth} × ${b.baseDepth} × ${b.baseHeight} m` : "sin bloques"}.`,
-      ),
+    children.push(
+      new Paragraph({
+        text: `${b.name} · Patas`,
+        heading: HeadingLevel.HEADING_1,
+      }),
       table([
-        ["Pata", "Fila", "X (m)", "Z (m)", "Altura vertical (m)"],
+        ["Pata", "Fila", "E–O (m)", "N–S (m)", "Longitud (m)", "Riel"],
         ...supports(b).map((s, i) => [
           String(i + 1),
           String(s.row + 1),
           s.x.toFixed(3),
           s.z.toFixed(3),
           s.length.toFixed(3),
+          s.axis === "x" ? "E–O" : "N–S",
         ]),
       ]),
-      para(placementSummary(b)),
-      ...(rotatedRows(b).length
-        ? [table([["Fila", "Columna", "Giro", "Estado"], ...rotatedRows(b)])]
-        : []),
-      ...warnings(b).map(para),
     );
+    const connections = braceRows(b);
+    if (connections.length)
+      children.push(
+        new Paragraph({
+          text: "Contravientos",
+          heading: HeadingLevel.HEADING_2,
+        }),
+        table([
+          ["Origen", "Destino", "Eje", "Longitud", "Herrajes", "Tornillos"],
+          ...connections,
+        ]),
+      );
+    const rotated = Object.entries(b.panelRotations ?? {}).filter(
+      ([, a]) => a !== 0,
+    );
+    if (rotated.length)
+      children.push(
+        new Paragraph({
+          text: "Paneles girados",
+          heading: HeadingLevel.HEADING_2,
+        }),
+        table([
+          ["Fila", "Columna", "Giro"],
+          ...rotated.map(([key, a]) => {
+            const [r, c] = key.split(":").map(Number);
+            return [String(r + 1), String(c + 1), `${a}°`];
+          }),
+        ]),
+      );
   }
-  const doc = new Document({ sections: [{ children: content }] });
-  download(await Packer.toBlob(doc), `${safeName(p.name)}.docx`);
+  download(
+    await Packer.toBlob(new Document({ sections: [{ children }] })),
+    `${safeName(p.name)}.docx`,
+  );
 }

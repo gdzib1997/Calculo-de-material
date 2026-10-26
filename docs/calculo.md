@@ -1,57 +1,53 @@
-# Reglas y fuentes del cálculo
+# Cálculo y geometría — versión 0.3
 
-## Origen
+La tabla de la imagen original se conserva como referencia histórica, pero no se suman sus rieles de nuevo sobre las longitudes geométricas. Las últimas instrucciones del usuario determinan los herrajes y tornillos. Los manuales oficiales Ascender siguen pendientes de consulta/validación; no se afirma certificación ni dimensionamiento resistente.
 
-Fuente disponible: imagen de la hoja de cálculo entregada por el usuario en esta conversación. Se transcriben nueve columnas de cama sencilla (1×2–1×10) y nueve de cama doble (2×2–2×10): Rail, Splice, Mid Clamp, End Clamp, Beam Clip, Tilt Plate, L-Foot, T-Bolt y Tierras.
+## Filas independientes
 
-No hay un manual oficial incluido en el repositorio. El intento de acceder a `https://unirac.com/ascender/` recibió `Tunnel connection failed: 403 Forbidden` de la red. Se guardaron `unirac.com` y `www.unirac.com` como dominios adicionales en el borrador del entorno, sin afirmar que ese guardado los haya habilitado en la máquina. La referencia Ascender debe completarse con documentos oficiales accesibles y su revisión/versión.
+Cada panel tiene una envolvente en su plano: ancho = |cos θ| × ancho nominal + |sin θ| × largo nominal; largo = |sin θ| × ancho nominal + |cos θ| × largo nominal. Dentro de cada fila se suman los anchos con la separación entre piezas, sin usar una cuadrícula de columnas compartida con otras filas. El largo de la fila es el mayor largo de envolvente de sus piezas.
 
-## Cantidades de referencia
+Las filas se colocan consecutivamente desde el frente, con la separación configurada. El borde oeste y el frente de referencia se calculan con el módulo nominal de la cama y se mantienen al girar paneles. Por tanto, girar la fila superior de una cama 2×4 no desplaza los paneles, patas ni rieles de la fila inferior. Las celdas de paneles retirados conservan su hueco para no mover los demás.
 
-Para una cama rectangular completa de una o dos filas y entre dos y diez columnas, los componentes de referencia (salvo riel total y Beam Clip, que usan las reglas descritas abajo) coinciden con la tabla cuando la longitud comercial y la longitud de referencia son iguales. `Rail` se interpreta provisionalmente como riel principal este–oeste: **la imagen no confirma si esa cuenta incluye otros perfiles**, por lo que esa interpretación debe revisarse con el autor y el manual.
+Los rieles E–O siguen cada tramo continuo de su propia fila. Los N–S, cuando se habilitan, cruzan sólo el ancho compartido de los tramos que unen; no extienden la fila corta hasta el ancho de la fila larga. La representación de una estructura mixta y sus conexiones aún requiere revisión técnica.
 
-Al cambiar la longitud comercial: `rieles E–O = ceil(cantidad de tabla × longitud de referencia / longitud comercial)`. La longitud de referencia de 4.70 m se adopta a partir del riel usado por el usuario, pero sigue siendo una suposición sobre la tabla. No se optimizan cortes ni se garantiza que todos los sobrantes sean aprovechables.
+## Patas y ejes
 
-Para geometrías irregulares se recorren celdas activas y se agrupan tramos contiguos de una o dos filas, sin solapar ni omitir paneles. Se suman sus cantidades. Un panel aislado, ausente en la tabla original, tiene una estimación explícita en `referenceQuantity`. La separación en tramos puede aumentar herrajes; no se considera una unión estructural validada.
+Cada tramo E–O dispone de dos líneas de apoyo por fila. Su distancia N–S horizontal es editable y se limita al fondo de esa fila menos 10 cm si no cabe. Los proyectos antiguos sin ese valor conservan los puntos al 20% y 80% del largo de fila. Las estaciones E–O se distribuyen con retranqueo de hasta 20 cm y con distancia no mayor que la seleccionada.
 
-## Rieles agrupados, norte–sur y Beam Clip
+Cada pata guarda el ID del riel al que pertenece. Sobre un riel E–O puede cambiar X y mantiene fija su coordenada N–S; sobre un riel N–S puede cambiar Y (almacenada internamente como Z de Three.js) y mantiene fija X. El movimiento se proyecta y se limita al segmento de ese riel. Cambiar de riel es una acción explícita del usuario.
 
-El listado de compra muestra una sola partida: **Riel (total)** = E–O de referencia + N–S habilitados + piezas para contravientos. Las cantidades por eje se mantienen sólo como desglose interno para el cálculo, sin duplicarlas en el listado o sus exportaciones.
+La longitud es altura frontal + distancia horizontal desde el frente × tan(inclinación). Se mide desde la cara superior del bloque, sin descuentos de herrajes. Si se usan bases, hay un bloque sólido por pata. No se calcula lastre, capacidad, anclaje, viento, nieve ni sismo.
 
-N–S tiene tres opciones: **Automático** conserva la exclusión en tramos sencillos; **Incluir** los añade también en tramos sencillos; **No incluir** los elimina de cualquier cama. En tramos habilitados, líneas = `ceil(ancho / separación máxima E–O) + 1`; cada línea utiliza `ceil(longitud inclinada / longitud comercial)` piezas. Con giros individuales se usan los anchos y largos de las celdas ampliadas.
+## Perfiles y abrazaderas
 
-Beam Clip automático = suma de `líneas N–S × filas del tramo × 2 cruces E–O por fila × factor por cruce`. El factor inicial es **1**, editable de 1 a 8. Sin N–S habilitado, Beam Clip automático es cero. No se multiplica por las piezas comerciales de una línea para no duplicar cruces en empalmes. Esta regla sustituye el renglón Beam Clip de la tabla por petición del usuario y **no se atribuye a un manual Unirac validado**.
+La partida **Riel (total)** reúne los perfiles E–O, N–S habilitados y contravientos. Cada miembro usa `ceil((longitud − tolerancia numérica) / longitud comercial)` piezas; no se aprovechan automáticamente sobrantes entre miembros. Los rieles E–O agregan el sobrante para end clamp en ambos extremos; N–S usa su largo inclinado. Los empalmes son piezas por miembro menos uno. Las patas se presentan como perfiles verticales con sus longitudes, separadas del stock de esos miembros; no se combina automáticamente su corte con los sobrantes de rieles.
 
-## Contravientos
+Dos End Clamp por línea E–O y dos Mid Clamp por unión de paneles contiguos en una fila. Beam Clip = cruces efectivos entre E–O y N–S × factor editable por cruce (inicialmente 1). Sin N–S, Beam Clip automático es cero. El modo automático excluye N–S de tramos sencillos; el usuario puede incluirlos o excluirlos expresamente.
 
-Cuando se activan se generan las diagonales solicitadas en el eje elegido. Cada diagonal une la zona inferior de una pata con la superior de otra, con pequeños descuentos de representación de 5 cm. Su longitud geométrica es la distancia 3D entre extremos; puede introducirse una longitud considerada manual. Las piezas comerciales de cada diagonal son `ceil(longitud considerada / longitud comercial)` y se suman al total de rieles. No se acredita aprovechamiento de sobrantes entre diagonales. Al mover patas, las longitudes automáticas cambian.
+## Contravientos y tornillos confirmados por el usuario
 
-La posición es esquemática: se recorren pares de patas por fila/línea o por pareja N–S. Si se solicitan más diagonales que ubicaciones, pueden repetirse. No hay dimensionamiento de conexión, orientación resistente ni rigidización validada.
+Sólo se colocan uniones elegidas entre dos patas distintas alineadas en E–O o N–S. La diagonal va desde la zona inferior de una hasta la zona superior de la otra; puede invertirse. Su longitud se calcula en 3D. Se conservan IDs locales de patas y de la unión. Si una pata desaparece o la unión queda desalineada, no se cuenta ni se dibuja hasta corregirla.
 
-## Geometría, patas y concreto
+- Cada pata: 1 L-Foot inferior + 1 Tilt Plate superior.
+- T-Bolt en patas: 1 por L-Foot y 2 por Tilt Plate; 3 por pata estándar.
+- Contraviento E–O: 2 L-Foot, uno por extremo; cada uno lleva 2 T-Bolt.
+- Contraviento N–S: 2 Tilt Plate, uno por extremo; cada uno lleva 2 T-Bolt.
+- Cada contraviento suma así 4 T-Bolt.
 
-- Ancho de cama: suma de anchos de columna y separaciones. Cada ancho de columna es el mayor ancho de envolvente de sus paneles girados.
-- Largo inclinado: suma de largos de fila y separaciones. Cada largo de fila es el mayor largo de envolvente de sus paneles girados. Para giro θ: ancho de envolvente = |cos θ| × ancho + |sin θ| × largo; largo de envolvente = |sin θ| × ancho + |cos θ| × largo. Se reservan también las celdas de paneles retirados.
-- Fondo horizontal: largo inclinado × cos(ángulo).
-- Altura de cada pata: altura frontal + distancia sobre el plano × sin(ángulo).
-- Cada tramo continuo en una fila tiene dos líneas de apoyo centradas con la distancia horizontal N–S seleccionada. Si la distancia no cabe, se limita al fondo horizontal de la fila menos 10 cm. Los proyectos antiguos que no tienen ese campo conservan el 20% y 80% del largo de su fila. Los apoyos laterales se distribuyen con un retranqueo máximo de 0.20 m y una separación no mayor a la seleccionada. Las posiciones y el retranqueo son supuestos de representación, **no posiciones aprobadas de fijación de un módulo**.
-- Un perfil vertical por pata dibujada, sin descuentos por herrajes. No se define sección, resistencia ni tipo de conexión del perfil.
-- Si las bases están activadas: un bloque sólido por pata y volumen geométrico ancho × fondo × alto × número de bloques. No se calcula masa necesaria, lastre, deslizamiento o vuelco.
-- El sobrante para end clamp se agrega a ambos extremos de los rieles E–O dibujados. No incrementa automáticamente la cuenta de la tabla.
-- Cambiar orientación, dimensiones o inclinación actualiza el modelo, las patas y los apoyos. Las cantidades de herrajes de la tabla se conservan para cada configuración de filas/columnas; no hay un dimensionamiento resistente asociado a esos cambios.
+Las cantidades base de L-Foot y Tilt Plate corresponden a las patas dibujadas, y se añaden los extremos de contravientos. Al editar la cantidad final de herrajes, los T-Bolt automáticos siguen el total con la distinción de L-Foot de contravientos. Si el total manual de L-Foot queda por debajo de los requeridos por las diagonales, se atribuyen primero a esos extremos. El T-Bolt también puede fijarse manualmente.
 
-## Ajustes manuales
+La puesta a tierra automática es **una por cama con paneles**, aunque existan huecos o varios tramos. En el total del proyecto se suman las camas. Las cantidades fijadas manualmente se identifican como tales y prevalecen hasta restablecerlas.
 
-Las cantidades manuales sustituyen a las automáticas y permanecen fijas al quitar paneles hasta restablecerlas. La selección N–S controla el cálculo automático, pero no sustituye un total de rieles fijado manualmente. Los ajustes antiguos por eje se suman para conservar la cantidad del proyecto anterior; al restablecer el riel se eliminan también esos ajustes antiguos. Los informes identifican cantidades manuales y exportan los supuestos.
+## Techo y varias camas
 
-## Posiciones individuales e imagen del techo
+La imagen es raster local JPEG, PNG o WebP, validada por cabecera, redimensionada y recodificada a JPEG. No se admiten imágenes SVG ni enlaces remotos. Se guarda en el navegador y en las copias del proyecto; no se transmite al repositorio ni a un servidor de la aplicación.
 
-Cada pata automática tiene un ID por fila, tramo, posición y línea. Las coordenadas manuales se guardan por ID y sustituyen las automáticas. Sólo se aplican a IDs presentes; al quitar un tramo no se dibujan patas huérfanas. Las posiciones se limitan a la huella actual si la cama cambia de tamaño y se advierte de ello. La altura se calcula sobre el plano de la cama con las coordenadas finales. Los rieles siguen siendo esquemáticos: mover una pata no valida su conexión con ellos.
+Una referencia define una distancia entre dos puntos normalizados de la foto y conserva su proporción original. Con dos referencias se resuelven ancho² y largo² a partir de las dos ecuaciones de distancia. Se rechazan puntos iguales, medidas no positivas, referencias que no determinan ambos ejes y escalas fuera de 0.5–200 m. Dos referencias no rectifican la perspectiva de una foto oblicua.
 
-La imagen del techo tiene ancho/largo físicos, desplazamientos X/Z, giro y opacidad. No interviene en cantidades ni detecta obstáculos. Se acepta una imagen raster local, que se redimensiona a un máximo de 2048 píxeles por lado y se vuelve a codificar como JPEG; no se admiten SVG ni direcciones remotas. El proyecto y la foto se guardan en el navegador y en las copias JSON. Los archivos anteriores sin esos campos siguen siendo válidos.
+Cada cama tiene posición propia y giro en planta. El movimiento de la cama transforma su grupo completo, manteniendo intactas sus medidas locales; otras camas permanecen en sus posiciones. La navegación y el desplazamiento de cámara no modifican el proyecto. Los ejes de herrajes/contravientos son los ejes locales de la cama.
 
-## Validación pendiente
+## Compatibilidad y presentación
 
-Revisar contra los manuales oficiales Ascender: sistema/modelo exacto y disponibilidad regional; significado de Rail en la tabla; longitudes de referencia; piezas y códigos; posiciones de sujeción aprobadas por el fabricante de módulos; separaciones admisibles; inclinaciones; alturas de patas y descuentos; reglas para huecos y camas múltiples; puesta a tierra; empalmes y aprovechamiento de cortes; cargas, secciones, conexiones, lastre y anclajes.
+Los proyectos versión 1 siguen siendo válidos. Se asignan posiciones a camas antiguas que antes no las tenían y se conservan como uniones explícitas los contravientos heredados. Las patas antiguas fuera del eje se proyectan al riel al que se asignan. Los ajustes antiguos E–O/N–S de cantidades se conservan dentro del total de rieles.
 
-La validación funcional de software no sustituye esta revisión técnica.
+Los precios anteriores se ignoran; no se muestran ni se exportan importes. No se presenta un apartado de reglas en la aplicación ni en los documentos. Esta documentación técnica se conserva en el repositorio para trazabilidad. La verificación funcional y de malware no sustituye la revisión de ingeniería o de manuales del fabricante.

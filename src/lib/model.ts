@@ -25,6 +25,23 @@ export const DEFAULT_PANEL: PanelPreset = {
   width: 1.14,
   length: 2.38,
 };
+export interface Point2 {
+  x: number;
+  y: number;
+}
+export interface RoofReference {
+  id: string;
+  from: Point2;
+  to: Point2;
+  distance: number;
+}
+export interface BraceConnection {
+  id: string;
+  fromId: string;
+  toId: string;
+  axis: "ew" | "ns";
+  reverse?: boolean;
+}
 export interface RoofImage {
   dataUrl: string;
   name: string;
@@ -34,16 +51,25 @@ export interface RoofImage {
   z: number;
   rotation: number;
   opacity: number;
+  imageAspect?: number;
+  references?: RoofReference[];
 }
+export type LegHardware = "lFoot" | "tiltPlate" | "none";
 export interface SupportPosition {
   x: number;
   z: number;
+  trackId?: string;
+  bottomHardware?: LegHardware;
+  topHardware?: LegHardware;
 }
 export interface Bed {
   id: string;
   name: string;
   rows: number;
   columns: number;
+  position?: { x: number; z: number };
+  azimuth?: number;
+  manualBraces?: BraceConnection[];
   removed: string[];
   angle: number;
   panelWidth: number;
@@ -88,7 +114,6 @@ export interface Material {
   calculated: number;
   quantity: number;
   overridden: boolean;
-  price: number;
 }
 export const MATERIALS: { id: MaterialId; name: string; unit: string }[] = [
   { id: "rail", name: "Riel (total)", unit: "pza" },
@@ -136,6 +161,7 @@ export function createBed(index = 1): Bed {
     rows: 2,
     columns: 6,
     removed: [],
+    manualBraces: [],
     angle: 15,
     panelWidth: 1.14,
     panelLength: 2.38,
@@ -166,7 +192,7 @@ export function createProject(): Project {
     name: "Proyecto solar",
     customer: "",
     panelLibrary: [{ ...DEFAULT_PANEL }],
-    beds: [createBed()],
+    beds: [{ ...createBed(), position: { x: 0, z: 0 }, azimuth: 0 }],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -184,8 +210,8 @@ export function panelRotation(b: Bed, r: number, c: number) {
   return b.panelRotations?.[panelKey(r, c)] ?? 0;
 }
 export function dimensions(b: Bed) {
-  const w = b.orientation === "portrait" ? b.panelWidth : b.panelLength;
-  const l = b.orientation === "portrait" ? b.panelLength : b.panelWidth;
+  const w = b.orientation === "portrait" ? b.panelWidth : b.panelLength,
+    l = b.orientation === "portrait" ? b.panelLength : b.panelWidth;
   const extents = (r: number, c: number) => {
     const a = (panelRotation(b, r, c) * Math.PI) / 180;
     return {
@@ -193,8 +219,8 @@ export function dimensions(b: Bed) {
       l: Math.abs(Math.sin(a)) * w + Math.abs(Math.cos(a)) * l,
     };
   };
-  const columnWidths = Array.from({ length: b.columns }, (_, c) =>
-    Math.max(...Array.from({ length: b.rows }, (_, r) => extents(r, c).w)),
+  const rowColumnWidths = Array.from({ length: b.rows }, (_, r) =>
+    Array.from({ length: b.columns }, (_, c) => extents(r, c).w),
   );
   const rowLengths = Array.from({ length: b.rows }, (_, r) =>
     Math.max(...Array.from({ length: b.columns }, (_, c) => extents(r, c).l)),
@@ -204,45 +230,173 @@ export function dimensions(b: Bed) {
       (v, i) =>
         values.slice(0, i).reduce((a, n) => a + n, 0) + i * b.gap + v / 2,
     );
-  const columnCenters = centers(columnWidths),
-    rowCenters = centers(rowLengths);
-  const width =
-    columnWidths.reduce((a, n) => a + n, 0) + (b.columns - 1) * b.gap;
-  const length = rowLengths.reduce((a, n) => a + n, 0) + (b.rows - 1) * b.gap;
-  const rad = (b.angle * Math.PI) / 180;
+  const nominalWidth = b.columns * w + (b.columns - 1) * b.gap,
+    nominalLength = b.rows * l + (b.rows - 1) * b.gap;
+  const minX = -nominalWidth / 2;
+  const rowWidths = rowColumnWidths.map(
+    (values) => values.reduce((a, n) => a + n, 0) + (b.columns - 1) * b.gap,
+  );
+  const rowColumnCenters = rowColumnWidths.map((values) =>
+    centers(values).map((x) => x + minX),
+  );
+  const rowCenters = centers(rowLengths),
+    width = Math.max(...rowWidths),
+    length = rowLengths.reduce((a, n) => a + n, 0) + (b.rows - 1) * b.gap,
+    rad = (b.angle * Math.PI) / 180;
+  const frontZ = (nominalLength * Math.cos(rad)) / 2,
+    backZ = frontZ - length * Math.cos(rad),
+    maxX = minX + width;
   return {
     w,
     l,
     width,
     length,
     rad,
-    columnWidths,
+    minX,
+    maxX,
+    frontZ,
+    backZ,
+    centerX: (minX + maxX) / 2,
+    centerZ: (frontZ + backZ) / 2,
+    rowWidths,
+    rowColumnWidths,
+    rowColumnCenters,
     rowLengths,
-    columnCenters,
     rowCenters,
+    columnWidths: rowColumnWidths[0],
+    columnCenters: rowColumnCenters[0],
     depth: length * Math.cos(rad),
     rearHeight: b.frontHeight + length * Math.sin(rad),
   };
 }
-export function sectionDimensions(b: Bed, section: Section) {
+export function panelPlacement(b: Bed, r: number, c: number) {
   const d = dimensions(b);
   return {
+    x: d.rowColumnCenters[r][c],
+    z: d.frontZ - d.rowCenters[r] * Math.cos(d.rad),
+    distance: d.rowCenters[r],
+    y: b.frontHeight + d.rowCenters[r] * Math.sin(d.rad),
+  };
+}
+export function rowRunBounds(
+  b: Bed,
+  row: number,
+  first: number,
+  count: number,
+) {
+  const d = dimensions(b);
+  return {
+    startX: d.rowColumnCenters[row][first] - d.rowColumnWidths[row][first] / 2,
     width:
-      d.columnWidths
-        .slice(section.column, section.column + section.columns)
+      d.rowColumnWidths[row]
+        .slice(first, first + count)
         .reduce((a, n) => a + n, 0) +
-      (section.columns - 1) * b.gap,
+      (count - 1) * b.gap,
+  };
+}
+export function sectionDimensions(b: Bed, section: Section) {
+  const d = dimensions(b);
+  const rows = Array.from({ length: section.rows }, (_, i) =>
+    rowRunBounds(b, section.row + i, section.column, section.columns),
+  );
+  const startX = Math.max(...rows.map((r) => r.startX)),
+    endX = Math.min(...rows.map((r) => r.startX + r.width));
+  return {
+    width: Math.max(0, endX - startX),
+    startX,
     length:
       d.rowLengths
         .slice(section.row, section.row + section.rows)
         .reduce((a, n) => a + n, 0) +
       (section.rows - 1) * b.gap,
-    startX:
-      d.columnCenters[section.column] -
-      d.columnWidths[section.column] / 2 -
-      d.width / 2,
     startDistance: d.rowCenters[section.row] - d.rowLengths[section.row] / 2,
   };
+}
+export function bedPose(project: Project, index: number) {
+  const b = project.beds[index];
+  return {
+    x:
+      b.position?.x ??
+      project.beds
+        .slice(0, index)
+        .reduce((n, v) => n + dimensions(v).width + 2, 0),
+    z: b.position?.z ?? 0,
+    rotation: b.azimuth ?? 0,
+  };
+}
+export function projectBounds(project: Project) {
+  const points = project.beds.flatMap((b, i) => {
+    const d = dimensions(b),
+      p = bedPose(project, i),
+      a = (p.rotation * Math.PI) / 180;
+    return [d.minX, d.maxX].flatMap((x) =>
+      [d.backZ, d.frontZ].map((z) => ({
+        x: p.x + x * Math.cos(a) - z * Math.sin(a),
+        z: p.z + x * Math.sin(a) + z * Math.cos(a),
+      })),
+    );
+  });
+  const minX = Math.min(...points.map((p) => p.x)),
+    maxX = Math.max(...points.map((p) => p.x)),
+    minZ = Math.min(...points.map((p) => p.z)),
+    maxZ = Math.max(...points.map((p) => p.z));
+  return {
+    minX,
+    maxX,
+    minZ,
+    maxZ,
+    centerX: (minX + maxX) / 2,
+    centerZ: (minZ + maxZ) / 2,
+    span: Math.max(maxX - minX, maxZ - minZ, 5),
+  };
+}
+export function calibrateRoof(
+  roof: RoofImage,
+  references: RoofReference[],
+): RoofImage {
+  if (references.length < 1 || references.length > 2)
+    throw new Error("Usa una o dos medidas de referencia.");
+  const terms = references.map((r) => ({
+    a: (r.to.x - r.from.x) ** 2,
+    b: (r.to.y - r.from.y) ** 2,
+    c: r.distance ** 2,
+  }));
+  let width: number, length: number;
+  if (terms.some((t) => t.a + t.b < 1e-8 || t.c <= 0))
+    throw new Error("Selecciona dos puntos distintos y una medida positiva.");
+  if (terms.length === 1) {
+    const aspect = roof.imageAspect ?? roof.width / roof.length,
+      t = terms[0];
+    width = Math.sqrt(t.c / (t.a + t.b / aspect ** 2));
+    length = width / aspect;
+  } else {
+    const [a, b] = terms,
+      det = a.a * b.b - b.a * a.b;
+    if (Math.abs(det) < 1e-10)
+      throw new Error(
+        "Las referencias no permiten calcular ambos ejes. Elige una más horizontal y otra más vertical.",
+      );
+    const w2 = (a.c * b.b - b.c * a.b) / det,
+      l2 = (a.a * b.c - b.a * a.c) / det;
+    if (w2 <= 0 || l2 <= 0)
+      throw new Error(
+        "Las medidas de referencia no son compatibles. Revisa puntos y distancias.",
+      );
+    width = Math.sqrt(w2);
+    length = Math.sqrt(l2);
+  }
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(length) ||
+    width < 0.5 ||
+    length < 0.5 ||
+    width > 200 ||
+    length > 200
+  )
+    throw new Error(
+      "La escala queda fuera del rango de 0.5 a 200 m. Revisa las referencias.",
+    );
+  return { ...roof, width, length, references };
 }
 export function supportLines(b: Bed, row: number) {
   const d = dimensions(b),
@@ -324,6 +478,60 @@ export function referenceQuantity(rows: number, columns: number) {
     ground: 1,
   };
 }
+export interface SupportTrack {
+  id: string;
+  axis: "x" | "z";
+  start: number;
+  end: number;
+  fixed: number;
+  row?: number;
+  line?: number;
+  runFirst?: number;
+  name: string;
+}
+export function supportTracks(b: Bed): SupportTrack[] {
+  const d = dimensions(b),
+    tracks: SupportTrack[] = [];
+  for (let r = 0; r < b.rows; r++) {
+    let c = 0;
+    while (c < b.columns) {
+      if (!isActive(b, r, c)) {
+        c++;
+        continue;
+      }
+      const first = c;
+      while (c < b.columns && isActive(b, r, c)) c++;
+      const bounds = rowRunBounds(b, r, first, c - first);
+      for (const [line, distance] of supportLines(b, r).entries())
+        tracks.push({
+          id: `ew:r${r}:c${first}:n${line}`,
+          axis: "x",
+          start: bounds.startX,
+          end: bounds.startX + bounds.width,
+          fixed: d.frontZ - distance * Math.cos(d.rad),
+          row: r,
+          line,
+          runFirst: first,
+          name: `E–O · fila ${r + 1} · línea ${line + 1}`,
+        });
+    }
+  }
+  for (const [i, section] of northSouthSections(b).entries()) {
+    const q = sectionDimensions(b, section);
+    if (q.width <= 0) continue;
+    const n = Math.ceil(q.width / b.supportSpacing) + 1;
+    for (let c = 0; c < n; c++)
+      tracks.push({
+        id: `ns:${section.row}:${section.column}:${i}:${c}`,
+        axis: "z",
+        start: d.frontZ - (q.startDistance + q.length) * Math.cos(d.rad),
+        end: d.frontZ - q.startDistance * Math.cos(d.rad),
+        fixed: q.startX + (c * q.width) / (n - 1),
+        name: `N–S · tramo ${i + 1} · línea ${c + 1}`,
+      });
+  }
+  return tracks;
+}
 export interface Support {
   id: string;
   x: number;
@@ -337,80 +545,105 @@ export interface Support {
   autoZ: number;
   moved: boolean;
   constrained: boolean;
+  trackId: string;
+  axis: "x" | "z";
+  bottomHardware: LegHardware;
+  topHardware: LegHardware;
 }
 export function supports(b: Bed): Support[] {
   const d = dimensions(b),
+    tracks = supportTracks(b),
     result: Support[] = [];
-  for (let r = 0; r < b.rows; r++) {
-    let c = 0;
-    while (c < b.columns) {
-      if (!isActive(b, r, c)) {
-        c++;
-        continue;
-      }
-      const first = c;
-      while (c < b.columns && isActive(b, r, c)) c++;
-      const start =
-        d.columnCenters[first] - d.columnWidths[first] / 2 - d.width / 2;
-      const span =
-        d.columnWidths.slice(first, c).reduce((a, n) => a + n, 0) +
-        (c - first - 1) * b.gap;
-      const inset = Math.min(0.2, span / 4),
-        available = span - 2 * inset;
-      const n = Math.max(2, Math.ceil(available / b.supportSpacing) + 1);
-      for (let i = 0; i < n; i++)
-        for (const [line, local] of supportLines(b, r).entries()) {
-          const id = `r${r}:c${first}:s${i}:n${line}`;
-          const autoX = start + inset + (available * i) / (n - 1),
-            autoZ = d.depth / 2 - local * Math.cos(d.rad);
-          const manual = b.supportOverrides?.[id];
-          const x = Math.max(
-            -d.width / 2,
-            Math.min(d.width / 2, manual?.x ?? autoX),
-          );
-          const z = Math.max(
-            -d.depth / 2,
-            Math.min(d.depth / 2, manual?.z ?? autoZ),
-          );
-          result.push({
-            id,
-            x,
-            z,
-            autoX,
-            autoZ,
-            row: r,
-            line,
-            slot: i,
-            runFirst: first,
-            moved: !!manual,
-            constrained: !!manual && (x !== manual.x || z !== manual.z),
-            length: b.frontHeight + (d.depth / 2 - z) * Math.tan(d.rad),
-          });
-        }
+  for (const rail of tracks.filter((t) => t.axis === "x")) {
+    const r = rail.row!,
+      first = rail.runFirst!,
+      line = rail.line!,
+      span = rail.end - rail.start,
+      inset = Math.min(0.2, span / 4),
+      available = span - 2 * inset,
+      n = Math.max(2, Math.ceil(available / b.supportSpacing) + 1);
+    for (let i = 0; i < n; i++) {
+      const id = `r${r}:c${first}:s${i}:n${line}`,
+        autoX = rail.start + inset + (available * i) / (n - 1),
+        autoZ = rail.fixed,
+        manual = b.supportOverrides?.[id];
+      const track = tracks.find((t) => t.id === manual?.trackId) || rail;
+      const x =
+        track.axis === "x"
+          ? Math.max(track.start, Math.min(track.end, manual?.x ?? autoX))
+          : track.fixed;
+      const z =
+        track.axis === "z"
+          ? Math.max(track.start, Math.min(track.end, manual?.z ?? autoZ))
+          : track.fixed;
+      result.push({
+        id,
+        x,
+        z,
+        autoX,
+        autoZ,
+        row: r,
+        line,
+        slot: i,
+        runFirst: first,
+        moved: !!manual,
+        trackId: track.id,
+        axis: track.axis,
+        bottomHardware: manual?.bottomHardware ?? "lFoot",
+        topHardware: manual?.topHardware ?? "tiltPlate",
+        constrained:
+          !!manual &&
+          (Math.abs(x - manual.x) > 1e-7 || Math.abs(z - manual.z) > 1e-7),
+        length: b.frontHeight + (d.frontZ - z) * Math.tan(d.rad),
+      });
     }
   }
-  return result;
+  // Preserva el orden histórico: fila, tramo, estación y línea.
+  return result.sort(
+    (a, c) =>
+      a.row - c.row ||
+      a.runFirst - c.runFirst ||
+      a.slot - c.slot ||
+      a.line - c.line,
+  );
+}
+export function snapSupport(
+  b: Bed,
+  id: string,
+  x: number,
+  z: number,
+  trackId?: string,
+): SupportPosition {
+  const leg = supports(b).find((s) => s.id === id);
+  if (!leg) throw new Error("La pata ya no existe.");
+  const t = supportTracks(b).find((t) => t.id === (trackId ?? leg.trackId));
+  if (!t) throw new Error("El riel ya no existe.");
+  return {
+    ...b.supportOverrides?.[id],
+    trackId: t.id,
+    x: t.axis === "x" ? Math.max(t.start, Math.min(t.end, x)) : t.fixed,
+    z: t.axis === "z" ? Math.max(t.start, Math.min(t.end, z)) : t.fixed,
+  };
 }
 export function supportNeighbours(b: Bed, id: string) {
   const all = supports(b),
-    current = all.find((s) => s.id === id);
-  if (!current) return { previous: undefined, opposite: undefined };
+    s = all.find((v) => v.id === id);
+  if (!s) return { previous: undefined, opposite: undefined };
+  const previous = all
+    .filter(
+      (v) =>
+        v.trackId === s.trackId &&
+        (s.axis === "x" ? v.x < s.x - 0.001 : v.z < s.z - 0.001),
+    )
+    .sort((a, b) => (s.axis === "x" ? b.x - a.x : b.z - a.z))[0];
   return {
-    previous: all
-      .filter(
-        (s) =>
-          s.row === current.row &&
-          s.runFirst === current.runFirst &&
-          s.line === current.line &&
-          s.x < current.x - 0.001,
-      )
-      .sort((a, b) => b.x - a.x)[0],
+    previous,
     opposite: all.find(
-      (s) =>
-        s.row === current.row &&
-        s.runFirst === current.runFirst &&
-        s.slot === current.slot &&
-        s.line !== current.line,
+      (v) =>
+        v.row === s.row &&
+        v.runFirst === s.runFirst &&
+        v.slot === s.slot &&
+        v.line !== s.line,
     ),
   };
 }
@@ -420,98 +653,182 @@ export function northSouthSections(b: Bed) {
   );
 }
 export interface Brace {
+  id: string;
+  fromId: string;
+  toId: string;
+  axis: "ew" | "ns";
   from: [number, number, number];
   to: [number, number, number];
   length: number;
   materialLength: number;
 }
-export function braces(b: Bed): Brace[] {
-  if (!b.bracingEnabled || !activeCount(b)) return [];
+export function braceAxis(a: Support, b: Support): "ew" | "ns" | undefined {
+  if (a.id === b.id) return undefined;
+  if (Math.abs(a.z - b.z) < 0.015 && Math.abs(a.x - b.x) > 0.02) return "ew";
+  if (Math.abs(a.x - b.x) < 0.015 && Math.abs(a.z - b.z) > 0.02) return "ns";
+  return undefined;
+}
+export function braceConnections(b: Bed): BraceConnection[] {
+  if (b.manualBraces !== undefined) return b.manualBraces;
+  if (!b.bracingEnabled) return [];
   const all = supports(b),
     groups = new Map<string, Support[]>();
-  for (const leg of all) {
+  for (const s of all) {
     const key =
       b.bracingAxis === "ns"
-        ? `${leg.row}:${leg.runFirst}:${leg.slot}`
-        : `${leg.row}:${leg.runFirst}:${leg.line}`;
+        ? `${s.row}:${s.runFirst}:${s.slot}`
+        : `${s.row}:${s.runFirst}:${s.line}`;
     const g = groups.get(key) || [];
-    g.push(leg);
+    g.push(s);
     groups.set(key, g);
   }
   const pairs = [...groups.values()]
-    .filter((g) => g.length >= 2)
+    .filter((g) => g.length > 1)
     .map((g) =>
       g.sort((a, c) => (b.bracingAxis === "ns" ? c.z - a.z : a.x - c.x)),
     );
   if (!pairs.length) return [];
   return Array.from({ length: b.bracingCount ?? 2 }, (_, i) => {
     const g = pairs[Math.floor(i / 2) % pairs.length];
-    const first = i % 2 ? g[g.length - 1] : g[0],
-      last = i % 2 ? g[0] : g[g.length - 1];
-    const from: [number, number, number] = [first.x, 0.05, first.z],
-      to: [number, number, number] = [
-        last.x,
-        Math.max(0.1, last.length - 0.05),
-        last.z,
-      ];
-    const length = Math.hypot(
-      to[0] - from[0],
-      to[1] - from[1],
-      to[2] - from[2],
-    );
-    return { from, to, length, materialLength: b.bracingLength ?? length };
+    return {
+      id: `legacy-${i}`,
+      fromId: g[0].id,
+      toId: g[g.length - 1].id,
+      axis: b.bracingAxis ?? "ew",
+      reverse: !!(i % 2),
+    };
   });
 }
-export function railBreakdown(b: Bed) {
-  const eastWest = Math.ceil(
-    (sections(b).reduce(
-      (n, s) => n + (referenceQuantity(s.rows, s.columns).railEW ?? 0),
-      0,
-    ) *
-      b.referenceRailLength) /
-      b.railLength,
-  );
-  let northSouth = 0,
-    beamClip = 0;
-  for (const section of northSouthSections(b)) {
-    const bounds = sectionDimensions(b, section),
-      lines = Math.ceil(bounds.width / b.supportSpacing) + 1;
-    northSouth += lines * Math.ceil(bounds.length / b.railLength);
-    beamClip += lines * section.rows * 2 * (b.beamClipsPerCrossing ?? 1);
+export function braces(b: Bed): Brace[] {
+  const all = supports(b);
+  return braceConnections(b).flatMap((c) => {
+    let a = all.find((s) => s.id === c.fromId),
+      z = all.find((s) => s.id === c.toId);
+    if (!a || !z || braceAxis(a, z) !== c.axis) return [];
+    if (c.reverse) [a, z] = [z, a];
+    const from: [number, number, number] = [a.x, 0.05, a.z],
+      to: [number, number, number] = [z.x, Math.max(0.1, z.length - 0.05), z.z],
+      length = Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
+    return [
+      {
+        id: c.id,
+        fromId: c.fromId,
+        toId: c.toId,
+        axis: c.axis,
+        from,
+        to,
+        length,
+        materialLength:
+          b.manualBraces === undefined ? (b.bracingLength ?? length) : length,
+      },
+    ];
+  });
+}
+export function memberCuts(b: Bed) {
+  const d = dimensions(b),
+    tracks = supportTracks(b),
+    cuts: {
+      id: string;
+      kind: "ew" | "ns" | "brace";
+      length: number;
+      pieces: number;
+    }[] = [];
+  for (const t of tracks) {
+    const length =
+      t.axis === "x"
+        ? t.end - t.start + 2 * b.overhang
+        : (t.end - t.start) / Math.cos(d.rad);
+    cuts.push({
+      id: t.id,
+      kind: t.axis === "x" ? "ew" : "ns",
+      length,
+      pieces: Math.max(1, Math.ceil((length - 1e-8) / b.railLength)),
+    });
   }
-  const bracing = braces(b).reduce(
-    (n, brace) => n + Math.ceil(brace.materialLength / b.railLength),
-    0,
-  );
+  for (const c of braces(b))
+    cuts.push({
+      id: c.id,
+      kind: "brace",
+      length: c.materialLength,
+      pieces: Math.max(1, Math.ceil((c.materialLength - 1e-8) / b.railLength)),
+    });
+  return cuts;
+}
+export function railBreakdown(b: Bed) {
+  const tracks = supportTracks(b),
+    cuts = memberCuts(b),
+    eastWest = cuts
+      .filter((c) => c.kind === "ew")
+      .reduce((n, c) => n + c.pieces, 0),
+    northSouth = cuts
+      .filter((c) => c.kind === "ns")
+      .reduce((n, c) => n + c.pieces, 0),
+    bracing = cuts
+      .filter((c) => c.kind === "brace")
+      .reduce((n, c) => n + c.pieces, 0);
+  const crossings = tracks
+    .filter((t) => t.axis === "x")
+    .reduce(
+      (n, ew) =>
+        n +
+        tracks.filter(
+          (t) =>
+            t.axis === "z" &&
+            t.fixed >= ew.start - 1e-6 &&
+            t.fixed <= ew.end + 1e-6 &&
+            ew.fixed >= t.start - 1e-6 &&
+            ew.fixed <= t.end + 1e-6,
+        ).length,
+      0,
+    );
   return {
     eastWest,
     northSouth,
     bracing,
-    beamClip,
+    beamClip: crossings * (b.beamClipsPerCrossing ?? 1),
+    splice: cuts.reduce((n, c) => n + c.pieces - 1, 0),
     total: eastWest + northSouth + bracing,
   };
-}
-function materialPrice(
-  id: MaterialId,
-  prices: Partial<Record<MaterialId, number>>,
-) {
-  return id === "rail"
-    ? (prices.rail ?? prices.railEW ?? prices.railNS ?? 0)
-    : (prices[id] ?? 0);
 }
 export function calculate(
   b: Bed,
   prices: Partial<Record<MaterialId, number>> = {},
 ): Material[] {
   const q: Partial<Record<MaterialId, number>> = {};
-  for (const section of sections(b))
-    for (const [id, n] of Object.entries(
-      referenceQuantity(section.rows, section.columns),
-    ))
-      q[id as MaterialId] = (q[id as MaterialId] ?? 0) + n;
+  const tracks = supportTracks(b);
+  q.endClamp = tracks.filter((t) => t.axis === "x").length * 2;
+  q.midClamp = 0;
+  for (let r = 0; r < b.rows; r++)
+    for (let c = 0; c < b.columns - 1; c++)
+      if (isActive(b, r, c) && isActive(b, r, c + 1)) q.midClamp += 2;
   const rails = railBreakdown(b);
   q.rail = rails.total;
   q.beamClip = rails.beamClip;
+  q.splice = rails.splice;
+  const connections = braces(b),
+    legs = supports(b);
+  const braceLFoot = connections.filter((c) => c.axis === "ew").length * 2,
+    braceTilt = connections.filter((c) => c.axis === "ns").length * 2;
+  const legLFoot = legs.reduce(
+      (n, s) =>
+        n +
+        Number(s.bottomHardware === "lFoot") +
+        Number(s.topHardware === "lFoot"),
+      0,
+    ),
+    legTilt = legs.reduce(
+      (n, s) =>
+        n +
+        Number(s.bottomHardware === "tiltPlate") +
+        Number(s.topHardware === "tiltPlate"),
+      0,
+    );
+  q.lFoot = legLFoot + braceLFoot;
+  q.tiltPlate = legTilt + braceTilt;
+  const finalLFoot = b.overrides.lFoot ?? q.lFoot,
+    finalTilt = b.overrides.tiltPlate ?? q.tiltPlate;
+  q.tBolt = finalLFoot + Math.min(finalLFoot, braceLFoot) + 2 * finalTilt;
+  q.ground = activeCount(b) > 0 ? 1 : 0;
   q.leg = supports(b).length;
   q.concrete = b.bases ? q.leg : 0;
   // Conserva los ajustes de versiones anteriores sumando las partidas antiguas.
@@ -537,7 +854,6 @@ export function calculate(
       m.id === "rail"
         ? manualRail !== undefined
         : b.overrides[m.id] !== undefined,
-    price: materialPrice(m.id, prices),
   }));
 }
 export function aggregate(
@@ -550,67 +866,7 @@ export function aggregate(
     calculated: all.reduce((a, items) => a + items[i].calculated, 0),
     quantity: all.reduce((a, items) => a + items[i].quantity, 0),
     overridden: all.some((items) => items[i].overridden),
-    price: materialPrice(m.id, prices),
   }));
-}
-export function warnings(b: Bed) {
-  const list = [
-    "Estimación de materiales; no verifica cargas de viento, sismo, nieve, anclajes ni capacidad estructural.",
-  ];
-  if (b.removed.length || b.rows > 2 || b.columns === 1)
-    list.push(
-      "La distribución irregular o fuera de 1×2–1×10 / 2×2–2×10 se estima por tramos. Requiere revisión de ingeniería.",
-    );
-  list.push(
-    "Tabla transcrita de la imagen del usuario. Manuales Ascender pendientes de consulta y validación; no se afirma compatibilidad de piezas.",
-  );
-  list.push(
-    `Longitud de referencia del riel: ${b.referenceRailLength.toFixed(2)} m, suposición editable para interpretar la tabla; la imagen no la especifica.`,
-  );
-  if (b.bases)
-    list.push(
-      "Bloques: uno por pata dibujada, sin dimensionar lastre ni estabilidad. Las patas mostradas son alturas verticales geométricas, sin descuentos de herrajes.",
-    );
-  if (Object.keys(b.overrides).length)
-    list.push(
-      "Hay cantidades manuales fijas: no cambiarán al quitar paneles hasta restablecer el cálculo automático.",
-    );
-  if (Object.keys(b.panelRotations || {}).length)
-    list.push(
-      "Los giros individuales amplían las celdas para evitar solapamientos. Los herrajes de la tabla no validan un montaje mixto; revisar fijaciones y rieles.",
-    );
-  if (Object.keys(b.supportOverrides || {}).length)
-    list.push(
-      "Hay patas desplazadas. Sus alturas y bloques siguen sus posiciones; se debe revisar su conexión y alineación con los rieles esquemáticos.",
-    );
-  if (supports(b).some((s) => s.constrained))
-    list.push(
-      "Al cambiar la huella, algunas posiciones manuales quedaron fuera y se limitaron a sus bordes. Revisa esas patas.",
-    );
-  if (
-    b.supportSpacingNS !== undefined &&
-    dimensions(b).rowLengths.some(
-      (l) => l * Math.cos(dimensions(b).rad) - 0.1 < b.supportSpacingNS!,
-    )
-  )
-    list.push(
-      "La separación N–S solicitada no cabe en alguna fila: se limita a su fondo horizontal menos 10 cm. Revisa la separación efectiva.",
-    );
-  list.push(
-    "Rieles agrupados: E–O + N–S habilitados + contravientos. Beam Clip automático: líneas N–S × 2 cruces por fila × clips por cruce; factor editable sin validación del fabricante.",
-  );
-  if (b.bracingEnabled)
-    list.push(
-      "Contravientos: una diagonal por unidad; piezas por diagonal redondeadas hacia arriba, sin aprovechar sobrantes entre diagonales. Su colocación y conexiones son esquemáticas, pendientes de revisión estructural.",
-    );
-  if (
-    b.overrides.rail === undefined &&
-    (b.overrides.railEW !== undefined || b.overrides.railNS !== undefined)
-  )
-    list.push(
-      "Se conservaron ajustes antiguos de rieles dentro del total agrupado. Restablece el riel para usar el cálculo automático actual.",
-    );
-  return list;
 }
 export function validateProject(input: unknown): Project {
   if (!input || typeof input !== "object")
@@ -625,22 +881,6 @@ export function validateProject(input: unknown): Project {
     p.beds.length > 30
   )
     throw new Error("Formato de proyecto no compatible.");
-  if (
-    p.prices &&
-    (typeof p.prices !== "object" ||
-      Object.entries(p.prices).some(
-        ([id, v]) =>
-          !(
-            ["railEW", "railNS"].includes(id) ||
-            MATERIALS.some((m) => m.id === id)
-          ) ||
-          typeof v !== "number" ||
-          !Number.isFinite(v) ||
-          v < 0 ||
-          v > 100000000,
-      ))
-  )
-    throw new Error("Precios inválidos.");
   if (
     p.panelLibrary &&
     (!Array.isArray(p.panelLibrary) ||
@@ -674,6 +914,37 @@ export function validateProject(input: unknown): Project {
       throw new Error(
         "Imagen de techo inválida; sólo JPEG, PNG o WebP locales.",
       );
+    if (
+      r.imageAspect !== undefined &&
+      (!Number.isFinite(r.imageAspect) ||
+        r.imageAspect < 0.001 ||
+        r.imageAspect > 1000)
+    )
+      throw new Error("Proporción de imagen inválida.");
+    if (
+      r.references !== undefined &&
+      (!Array.isArray(r.references) ||
+        r.references.length > 2 ||
+        r.references.some(
+          (v) =>
+            !v ||
+            typeof v.id !== "string" ||
+            !Number.isFinite(v.distance) ||
+            v.distance <= 0 ||
+            v.distance > 500 ||
+            [v.from, v.to].some(
+              (p) =>
+                !p ||
+                !Number.isFinite(p.x) ||
+                !Number.isFinite(p.y) ||
+                p.x < 0 ||
+                p.x > 1 ||
+                p.y < 0 ||
+                p.y > 1,
+            ),
+        ))
+    )
+      throw new Error("Referencias de techo inválidas.");
     for (const [key, min, max] of [
       ["width", 0.5, 200],
       ["length", 0.5, 200],
@@ -713,6 +984,37 @@ export function validateProject(input: unknown): Project {
     )
       throw new Error("Datos de cama inválidos.");
     ids.add(b.id);
+    if (
+      b.position &&
+      (!Number.isFinite(b.position.x) ||
+        !Number.isFinite(b.position.z) ||
+        Math.abs(b.position.x) > 200 ||
+        Math.abs(b.position.z) > 200)
+    )
+      throw new Error("Posición de cama inválida.");
+    if (
+      b.azimuth !== undefined &&
+      (!Number.isFinite(b.azimuth) || b.azimuth < 0 || b.azimuth >= 360)
+    )
+      throw new Error("Giro de cama inválido.");
+    if (
+      b.manualBraces !== undefined &&
+      (!Array.isArray(b.manualBraces) ||
+        b.manualBraces.length > 200 ||
+        new Set(b.manualBraces.map((c) => c.id)).size !==
+          b.manualBraces.length ||
+        b.manualBraces.some(
+          (c) =>
+            !c ||
+            typeof c.id !== "string" ||
+            typeof c.fromId !== "string" ||
+            typeof c.toId !== "string" ||
+            c.fromId === c.toId ||
+            !["ew", "ns"].includes(c.axis) ||
+            (c.reverse !== undefined && typeof c.reverse !== "boolean"),
+        ))
+    )
+      throw new Error("Contravientos inválidos.");
     if (
       b.nsMode !== undefined &&
       !["auto", "include", "exclude"].includes(b.nsMode)
@@ -768,7 +1070,12 @@ export function validateProject(input: unknown): Project {
             !Number.isFinite(v.x) ||
             !Number.isFinite(v.z) ||
             Math.abs(v.x) > 100 ||
-            Math.abs(v.z) > 100,
+            Math.abs(v.z) > 100 ||
+            (v.trackId !== undefined && typeof v.trackId !== "string") ||
+            (v.bottomHardware !== undefined &&
+              !["lFoot", "tiltPlate", "none"].includes(v.bottomHardware)) ||
+            (v.topHardware !== undefined &&
+              !["lFoot", "tiltPlate", "none"].includes(v.topHardware)),
         ))
     )
       throw new Error("Posiciones de patas inválidas.");
@@ -802,5 +1109,11 @@ export function validateProject(input: unknown): Project {
     )
       throw new Error("Cantidades manuales inválidas.");
   }
+  p.beds = p.beds.map((b, i) => ({
+    ...b,
+    position: b.position ?? { x: bedPose(p, i).x, z: bedPose(p, i).z },
+    azimuth: b.azimuth ?? 0,
+    manualBraces: b.manualBraces ?? braceConnections(b),
+  }));
   return p;
 }
