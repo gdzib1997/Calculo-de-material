@@ -66,4 +66,14 @@ La ejecución [40372369435](https://github.com/gdzib1997/Calculo-de-material/act
 
 No se observaron detecciones en esa ejecución y no se borraron ni cambiaron los archivos durante el análisis. Eso no confirma un falso positivo en el equipo del usuario ni garantiza resultados idénticos en otros equipos. No se devuelve el ZIP retirado como sustituto.
 
-GitHub Pages todavía requiere activación por el propietario desde Settings → Pages, fuente `Deploy from a branch`, rama `gh-pages`, carpeta `/(root)`. Las instrucciones oficiales de `actions/configure-pages` indican que activar Pages requiere un token distinto de `GITHUB_TOKEN`, con permisos administrativos; no se solicitó un token ni se intentó eludir esa restricción.
+En esa publicación inicial, GitHub Pages requería activación por el propietario desde Settings → Pages, fuente `Deploy from a branch`, rama `gh-pages`, carpeta `/(root)`. Las instrucciones oficiales de `actions/configure-pages` indican que activar Pages requiere un token distinto de `GITHUB_TOKEN`, con permisos administrativos; no se solicitó un token ni se intentó eludir esa restricción.
+
+## Actualización 0.2: edición individual y nuevos materiales
+
+El código `e34187d4ae53d4507c404e02505f50ed0d05817c` pasó 50 pruebas de cálculo, 11 pruebas de navegador y la compilación local. Incluye edición de patas, giros por panel, foto local del techo, riel total agrupado, N–S opcional y contravientos.
+
+La ejecución [40383237858](https://github.com/gdzib1997/Calculo-de-material/actions/runs/40383237858) volvió a compilar y analizar 31 archivos en Windows con Defender (motor `1.1.26090.9`, firmas `1.461.214.0`, código 0, 26/10/2026 13:05:16 Ciudad de México). El informe se publicó con la compilación `9fd2feb3a3e6d3ee0ecd0b1c6d60da0d2693d5b0` de `gh-pages`. Se descargaron los 28 archivos web y se verificaron todas sus huellas contra el informe; su prueba funcional interna confirmó render 3D, retirada de paneles y las tres exportaciones sin errores de navegador.
+
+El commit de publicación `6827c50faf81f5c7800f2f95679bca6715846ab7` conserva el mismo árbol de archivos analizados. GitHub confirmó el despliegue en [40384204172](https://github.com/gdzib1997/Calculo-de-material/actions/runs/40384204172). Pages ya estaba activado por el propietario; no necesita volver a activarse. La comprobación de despliegue se basó en GitHub, porque la política de red de esta máquina bloquea el acceso directo al dominio github.io.
+
+Estas comprobaciones no convierten el análisis de malware en una garantía absoluta ni validan el diseño estructural. El ZIP original continúa retirado.
