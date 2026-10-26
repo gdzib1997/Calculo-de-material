@@ -1,0 +1,138 @@
+{
+  "status": "scan-completed-no-detection",
+  "scannedAtUtc": "2026-10-26T17:51:28.4459176Z",
+  "workflowRun": "https://github.com/gdzib1997/Calculo-de-material/actions/runs/40372369435",
+  "sourceCommit": "927e0fa243258a7988f809473e5b7a41185682e7",
+  "originalZipSha256": "aee820f7fa85dbe99a1f331bc972e890a93a174e0cb52f0edc8b8b514dfb948b",
+  "engineVersion": "1.1.26090.9",
+  "signatureVersion": "1.461.214.0",
+  "signatureUpdatedUtc": "2026-10-26T12:21:40.0000000Z",
+  "scannerExitCode": 0,
+  "files": [
+    {
+      "path": "Unirack-Studio.zip",
+      "sha256": "aee820f7fa85dbe99a1f331bc972e890a93a174e0cb52f0edc8b8b514dfb948b"
+    },
+    {
+      "path": "contenido\\LEEME.txt",
+      "sha256": "61535bccfef1190862f80c435b949a6ac3045bacd03beafa8d46f56866d981cd"
+    },
+    {
+      "path": "contenido\\Unirack-Studio.html",
+      "sha256": "5e2f4c188ecadc7c0b2ff3fb61255a224bb44e1f9a5a6e75d32b314e3ee5936b"
+    },
+    {
+      "path": "web\\index.html",
+      "sha256": "57bfe543a0bdc0e40e5ab692bb83fd2f62700c28445ac9b82ac13dedb86b0d47"
+    },
+    {
+      "path": "web\\assets\\dm-sans-latin-400-normal-BwCSEQnW.woff",
+      "sha256": "38702875fe179437d200e7ba6f7fab4d497ffe48117ef332029b2081751186ad"
+    },
+    {
+      "path": "web\\assets\\dm-sans-latin-400-normal-CW0RaeGs.woff2",
+      "sha256": "4ab51eb2cd7305d177187908d6397474d4520663f6c6e572feb0a64f4fa80006"
+    },
+    {
+      "path": "web\\assets\\dm-sans-latin-500-normal-B9HHJjqV.woff2",
+      "sha256": "19bf1984956517c35c2bd35b6cdedac12a21d6fcd3596c614ecdfb88b648909d"
+    },
+    {
+      "path": "web\\assets\\dm-sans-latin-500-normal-Dr3UlScf.woff",
+      "sha256": "7deb957e430b780ee3272d801af4f9f2211b1330ec40a312a8f25309eacb4034"
+    },
+    {
+      "path": "web\\assets\\dm-sans-latin-600-normal-Aqo67rzb.woff2",
+      "sha256": "6bb2b2645ba5eeaecf56322c543fa3a75b87b927977b9c03b1dabc4205089120"
+    },
+    {
+      "path": "web\\assets\\dm-sans-latin-600-normal-BmdmIIQ2.woff",
+      "sha256": "e7351257e49400eff05aca30a2007289194a900860d30c30770d8b8732897564"
+    },
+    {
+      "path": "web\\assets\\dm-sans-latin-700-normal-CUSSCpQX.woff",
+      "sha256": "af422a448ac00679a8dbb13532db3616829c5a35b58d3eeea5903ce17ad2e36a"
+    },
+    {
+      "path": "web\\assets\\dm-sans-latin-700-normal-DvUfVpUG.woff2",
+      "sha256": "35c5efa0e5daa52ee5c6500f5be354bf751fb65c4e49e1d6806c6eb5883e8fe9"
+    },
+    {
+      "path": "web\\assets\\exceljs.min-ChADygeI.js",
+      "sha256": "30d1883363f22c9bf25a79b03ff19a5af8938a6abe28191bb902b49c6d201f72"
+    },
+    {
+      "path": "web\\assets\\export-DH1zctJq.js",
+      "sha256": "a23ff1b21a2dda6f7772cbbe31b8f25988b8f4e4af78db9c8b40bb7f42a0cc44"
+    },
+    {
+      "path": "web\\assets\\html2canvas.esm-DXEQVQnt.js",
+      "sha256": "7b07a9ca175c614e8e7de447198d35b0d161dd50db2c63b5f7fd6ea0e1e876f2"
+    },
+    {
+      "path": "web\\assets\\index-C12BSPE_.css",
+      "sha256": "6dfe30c1e32e2640ca044b653d58594cdf6078ef81809648a03a9e648320d113"
+    },
+    {
+      "path": "web\\assets\\index-CJXK9WOL.js",
+      "sha256": "5f3914a022b5f3e29b16e2d57fd7b0092c07cf010cc9c1aa8194b7293ee2caae"
+    },
+    {
+      "path": "web\\assets\\index-Dh4zJMH6.js",
+      "sha256": "2625b502bbc9ea58f4aebe07053fe7fb0cb947a74f40faa83385617e3f5366c9"
+    },
+    {
+      "path": "web\\assets\\index.es-BMPhMnhT.js",
+      "sha256": "86d8ca7b420a734b12b30a8a3d70f346f7c48f5c036f371be1325718f313bf34"
+    },
+    {
+      "path": "web\\assets\\jspdf.es.min-CXzT6YAQ.js",
+      "sha256": "0d77c8b85190caddd0370393ed76afcb131511092ee6283e1afc9141c39510da"
+    },
+    {
+      "path": "web\\assets\\jspdf.plugin.autotable-DSC45M_K.js",
+      "sha256": "cf136bc3222367f1280eae9614271951c7e26db26e5ce6506e807419b2206600"
+    },
+    {
+      "path": "web\\assets\\manrope-latin-500-normal-BYYD-dBL.woff2",
+      "sha256": "19874318747181a650eda439c37955220b849d9c4797c9e0718ee67d4bf929bc"
+    },
+    {
+      "path": "web\\assets\\manrope-latin-500-normal-DMZssgOp.woff",
+      "sha256": "c805ac8fd73fb95ddba74e624500c7d7d9a8ec6434d723bb6a9b76173c9e41b4"
+    },
+    {
+      "path": "web\\assets\\manrope-latin-600-normal-4f0koTD-.woff2",
+      "sha256": "f7ac6258da20ab7541939b59851155753d1d24f1b30cbcb949077a3faa3d1593"
+    },
+    {
+      "path": "web\\assets\\manrope-latin-600-normal-BqgrALkZ.woff",
+      "sha256": "8d1f509774bca963fa02faf674678ce9244474306361ca2798583fa600346df6"
+    },
+    {
+      "path": "web\\assets\\manrope-latin-700-normal-BZp_XxE4.woff2",
+      "sha256": "d2a12c85a831e4b5db341767d0347fa3d1361d22a1fcb3e361a16b6c90080f71"
+    },
+    {
+      "path": "web\\assets\\manrope-latin-700-normal-DGRFkw-m.woff",
+      "sha256": "e5d35fda4759b0d63ebcc6cca0627d98d9208254ce851c85df29e4d12aeafb61"
+    },
+    {
+      "path": "web\\assets\\manrope-latin-800-normal-BfWYOv1c.woff2",
+      "sha256": "74c161dbcbce7c3590803cc72dc1f63313c360e13367aba5075a7b7b3818ea49"
+    },
+    {
+      "path": "web\\assets\\manrope-latin-800-normal-uHUdIJgA.woff",
+      "sha256": "ce954acb78379d559111a15d29925f3390b69161b2b1365c38b0f19c76991bac"
+    },
+    {
+      "path": "web\\assets\\purify.es-18JuyMri.js",
+      "sha256": "d20e7581818a4ef09a7a0e1bc84597c51fa253aea2b5b55935d5d7809793a28d"
+    },
+    {
+      "path": "web\\assets\\Scene-DRxbUPbB.js",
+      "sha256": "a923b0bc43c99021a6eee2d73a5d02978dc9a025a7065c256a301e3f3c8342b0"
+    }
+  ],
+  "limitation": "Resultado limitado a estos archivos, motor y firmas. No garantiza ausencia de malware ni el mismo resultado en otros equipos. La alerta original del usuario no se considera un falso positivo confirmado."
+}
