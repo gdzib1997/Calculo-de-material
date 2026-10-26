@@ -804,8 +804,7 @@ function App() {
                 <div className="tip">
                   <Info size={15} />
                   <p>
-                    Haz clic en un panel del modelo para quitarlo. Los
-                    materiales se recalculan al instante.
+                    Usa «Girar paneles» o «Quitar paneles» en el modelo. Al retirar una pieza se recalculan los materiales.
                   </p>
                 </div>
               </div>

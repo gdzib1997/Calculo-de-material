@@ -711,6 +711,9 @@ export default function Scene({
     [rotate, setRotate] = useState(false),
     [pan, setPan] = useState(false),
     [hardware, setHardware] = useState(true);
+  useEffect(() => {
+    if (mode !== "navigate") setPan(false);
+  }, [mode]);
   const root = useRef<HTMLDivElement>(null);
   const fit = useMemo(
     () => projectBounds(project),

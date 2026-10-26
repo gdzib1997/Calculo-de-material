@@ -329,6 +329,12 @@ test("mueve una cama sin alterar otra y desplaza la cámara sin mover objetos", 
     moved.beds.map((b) => b.position),
   );
   expect(imageBefore.equals(imageAfter)).toBe(false);
+  await page
+    .getByRole("button", { name: "Patas y bases", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Desplazar vista", exact: true }),
+  ).not.toHaveClass(/active/);
 });
 
 test("escala el techo con una o dos medidas reales y conserva las referencias", async ({
