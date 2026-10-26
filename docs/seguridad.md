@@ -2,7 +2,7 @@
 
 ## Aviso comunicado por el usuario
 
-El 26 de octubre de 2026 el usuario mostró una captura de Microsoft Defender con `Trojan:Script/Ulthar.A!ml`, gravedad **grave**, estado **activo**. La captura muestra las 11:31 a. m.; el usuario indica que el aviso apareció durante la descarga. No se dispone todavía del detalle de los elementos afectados ni de confirmación de si llegó a abrir el HTML.
+El 26 de octubre de 2026 el usuario mostró una captura de Microsoft Defender con `Trojan:Script/Ulthar.A!ml`, gravedad **grave**, estado **activo**. La captura muestra las 11:31 a. m.; el usuario indica que el aviso apareció durante la descarga. El usuario confirmó después que Defender lo bloqueó durante la descarga, que no llegó a abrir el HTML y que Defender lo eliminó. Sigue pendiente el detalle exacto de los elementos afectados.
 
 No se considera demostrada la presencia de malware ni se declara un falso positivo. Una prueba funcional de navegador, una auditoría de dependencias o una firma de paquete no sustituyen un análisis antivirus.
 
@@ -39,3 +39,9 @@ La auditoría posterior devuelve dos avisos moderados (`uuid` y su dependiente `
 ## Información pendiente
 
 Confirmar en el historial de protección el nombre del elemento afectado, si el usuario llegó a abrir el HTML y el resultado de las acciones de Defender. La atribución de la detección requiere análisis del motor de Defender o del fabricante; no se intentará evitarla cambiando el nombre, el empaquetado o las exclusiones del antivirus.
+
+## Comprobación con Microsoft Defender en Windows
+
+Se preparó `.github/workflows/defender-review.yml`, ejecutable en GitHub Actions con Windows 2022. El script recupera la muestra exacta del historial, comprueba su SHA-256, extrae únicamente los nombres esperados y analiza tanto ZIP como HTML con Defender, sin ejecutarlos. Actualiza las firmas y exige que el servicio esté activo. Cualquier hallazgo o error bloquea el análisis; no hay publicación ni despliegue automático, incluso si el análisis finaliza sin detecciones.
+
+Este flujo necesita que GitHub acepte y ejecute el workflow y que el runner tenga Defender operativo. **Preparar o subir el flujo no significa que el análisis haya pasado.** El resultado debe verificarse en Actions y conservar su motor, versión de firmas, huella y fecha.

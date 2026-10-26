@@ -1,0 +1,27 @@
+name: Revisar descarga con Microsoft Defender
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/defender-review.yml
+      - scripts/scan-with-defender.ps1
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Analizar muestra retirada sin ejecutarla
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - name: Obtener el código y el historial de la muestra
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Actualizar firmas y analizar ZIP y HTML con Defender
+        shell: pwsh
+        run: ./scripts/scan-with-defender.ps1
