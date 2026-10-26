@@ -1,4 +1,4 @@
-import { Suspense, useRef, useState, Component } from "react";
+import { Suspense, useRef, useState, useEffect, Component } from "react";
 import type { ReactNode } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
@@ -8,7 +8,8 @@ import {
   Html,
   Line,
 } from "@react-three/drei";
-import { Vector3 } from "three";
+import { Vector3, Plane, Texture, SRGBColorSpace, Quaternion } from "three";
+import type { ThreeEvent } from "@react-three/fiber";
 import {
   RotateCcw,
   Move3D,
@@ -17,8 +18,19 @@ import {
   Maximize,
   Compass,
 } from "lucide-react";
-import { dimensions, isActive, supports, sections } from "../lib/model";
-import type { Bed } from "../lib/model";
+import {
+  dimensions,
+  isActive,
+  supports,
+  sections,
+  supportLines,
+  sectionDimensions,
+  panelRotation,
+  panelKey,
+  northSouthSections,
+  braces,
+} from "../lib/model";
+import type { Bed, RoofImage, Support } from "../lib/model";
 class SceneBoundary extends Component<
   { children: ReactNode },
   { failed: boolean }
@@ -65,11 +77,13 @@ function Panel({
   l,
   removed,
   onClick,
+  selected = false,
 }: {
   w: number;
   l: number;
   removed: boolean;
   onClick: () => void;
+  selected?: boolean;
 }) {
   const [hover, setHover] = useState(false);
   return (
@@ -91,7 +105,9 @@ function Panel({
       <mesh castShadow receiveShadow>
         <boxGeometry args={[w, 0.045, l]} />
         <meshStandardMaterial
-          color={removed ? "#b5c5bd" : hover ? "#3c8f83" : "#b9c6c9"}
+          color={
+            removed ? "#b5c5bd" : hover || selected ? "#7eae52" : "#b9c6c9"
+          }
           transparent
           opacity={removed ? 0.14 : 1}
           wireframe={removed}
@@ -102,7 +118,7 @@ function Panel({
           <mesh position={[0, 0.027, 0]}>
             <boxGeometry args={[w - 0.045, 0.012, l - 0.045]} />
             <meshStandardMaterial
-              color={hover ? "#27564e" : "#1a344b"}
+              color={selected ? "#41633e" : hover ? "#27564e" : "#1a344b"}
               metalness={0.35}
               roughness={0.38}
             />
@@ -130,41 +146,215 @@ function Panel({
     </group>
   );
 }
+export type EditMode = "remove" | "panel" | "support";
+interface EditingProps {
+  mode: EditMode;
+  selectedPanel: string;
+  selectedSupport?: string;
+  onSelectPanel: (r: number, c: number) => void;
+  onSelectSupport: (id: string) => void;
+  onMoveSupport: (id: string, x: number, z: number) => void;
+}
+function Roof({ roof }: { roof: RoofImage }) {
+  const [texture, setTexture] = useState<Texture | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    let map: Texture | undefined;
+    const image = new Image();
+    image.onload = () => {
+      if (disposed) return;
+      map = new Texture(image);
+      map.colorSpace = SRGBColorSpace;
+      map.needsUpdate = true;
+      setTexture(map);
+    };
+    image.src = roof.dataUrl;
+    return () => {
+      disposed = true;
+      image.onload = null;
+      map?.dispose();
+    };
+  }, [roof.dataUrl]);
+  if (!texture) return null;
+  return (
+    <group
+      position={[roof.x, -0.035, roof.z]}
+      rotation={[0, (-roof.rotation * Math.PI) / 180, 0]}
+    >
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[roof.width, roof.length]} />
+        <meshBasicMaterial
+          map={texture}
+          transparent
+          opacity={roof.opacity}
+          depthWrite={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+function Leg({
+  bed,
+  leg,
+  enabled,
+  selected,
+  onSelect,
+  onMove,
+  onDragging,
+  measure,
+  index,
+}: {
+  bed: Bed;
+  leg: Support;
+  enabled: boolean;
+  selected: boolean;
+  onSelect: () => void;
+  onMove: (x: number, z: number) => void;
+  onDragging: (v: boolean) => void;
+  measure: boolean;
+  index: number;
+}) {
+  const drag = useRef<{ x: number; z: number } | null>(null);
+  const baseY = bed.bases ? bed.baseHeight : 0;
+  const point = (event: ThreeEvent<PointerEvent>) =>
+    event.ray.intersectPlane(
+      new Plane(new Vector3(0, 1, 0), -baseY),
+      new Vector3(),
+    );
+  const release = (event: ThreeEvent<PointerEvent>) => {
+    if (!drag.current) return;
+    event.stopPropagation();
+    drag.current = null;
+    onDragging(false);
+    (
+      event.target as unknown as { releasePointerCapture: (id: number) => void }
+    ).releasePointerCapture(event.pointerId);
+  };
+  return (
+    <group
+      onClick={(e) => {
+        if (enabled) {
+          e.stopPropagation();
+          onSelect();
+        }
+      }}
+      onPointerDown={(e) => {
+        if (!enabled || e.button !== 0) return;
+        e.stopPropagation();
+        const p = point(e);
+        if (!p) return;
+        drag.current = { x: leg.x - p.x, z: leg.z - p.z };
+        onSelect();
+        onDragging(true);
+        (
+          e.target as unknown as { setPointerCapture: (id: number) => void }
+        ).setPointerCapture(e.pointerId);
+      }}
+      onPointerMove={(e) => {
+        if (!enabled || !drag.current) return;
+        e.stopPropagation();
+        const p = point(e);
+        if (p) onMove(p.x + drag.current.x, p.z + drag.current.z);
+      }}
+      onPointerUp={release}
+    >
+      {bed.bases && (
+        <mesh position={[leg.x, -baseY / 2, leg.z]} castShadow receiveShadow>
+          <boxGeometry args={[bed.baseWidth, baseY, bed.baseDepth]} />
+          <meshStandardMaterial
+            color={selected ? "#aabd83" : "#b7b1a3"}
+            roughness={1}
+          />
+        </mesh>
+      )}
+      <mesh position={[leg.x, leg.length / 2, leg.z]} castShadow>
+        <boxGeometry
+          args={[enabled ? 0.105 : 0.055, leg.length, enabled ? 0.105 : 0.055]}
+        />
+        <meshStandardMaterial
+          color={selected ? "#739d42" : enabled ? "#547d66" : "#aebbb9"}
+          metalness={0.65}
+          roughness={0.3}
+        />
+      </mesh>
+      <mesh position={[leg.x, 0.025, leg.z]}>
+        <boxGeometry args={[0.16, 0.05, 0.14]} />
+        <meshStandardMaterial
+          color={selected ? "#729b42" : "#667e76"}
+          metalness={0.55}
+        />
+      </mesh>
+      {(selected || measure) && (
+        <Html
+          position={[leg.x, leg.length + 0.15, leg.z]}
+          center
+          style={{ pointerEvents: "none" }}
+        >
+          <span className="dimension-label">
+            P-{String(index + 1).padStart(2, "0")} · {leg.length.toFixed(3)} m
+          </span>
+        </Html>
+      )}
+    </group>
+  );
+}
+function BraceBeam({
+  from,
+  to,
+}: {
+  from: [number, number, number];
+  to: [number, number, number];
+}) {
+  const a = new Vector3(...from),
+    b = new Vector3(...to),
+    delta = b.clone().sub(a),
+    center = a.clone().add(b).multiplyScalar(0.5),
+    rotation = new Quaternion().setFromUnitVectors(
+      new Vector3(0, 1, 0),
+      delta.clone().normalize(),
+    );
+  return (
+    <mesh position={center} quaternion={rotation} castShadow>
+      <boxGeometry args={[0.045, delta.length(), 0.045]} />
+      <meshStandardMaterial color="#7b9b83" metalness={0.6} roughness={0.35} />
+    </mesh>
+  );
+}
 function Structure({
   bed,
   measure,
   onToggle,
+  mode,
+  selectedPanel,
+  selectedSupport,
+  onSelectPanel,
+  onSelectSupport,
+  onMoveSupport,
+  onDragging,
 }: {
   bed: Bed;
   measure: boolean;
   onToggle: (r: number, c: number) => void;
-}) {
-  const d = dimensions(bed);
-  const legs = supports(bed);
-  const baseY = bed.bases ? bed.baseHeight : 0;
+  onDragging: (v: boolean) => void;
+} & EditingProps) {
+  const d = dimensions(bed),
+    legs = supports(bed),
+    baseY = bed.bases ? bed.baseHeight : 0;
   return (
     <group position={[0, baseY, 0]}>
-      {legs.map((s, i) => (
-        <group key={i}>
-          {bed.bases && (
-            <mesh position={[s.x, -baseY / 2, s.z]} castShadow receiveShadow>
-              <boxGeometry args={[bed.baseWidth, baseY, bed.baseDepth]} />
-              <meshStandardMaterial color="#b7b1a3" roughness={1} />
-            </mesh>
-          )}
-          <mesh position={[s.x, s.length / 2, s.z]} castShadow>
-            <boxGeometry args={[0.055, s.length, 0.055]} />
-            <meshStandardMaterial
-              color="#aebbb9"
-              metalness={0.65}
-              roughness={0.3}
-            />
-          </mesh>
-          <mesh position={[s.x, 0.025, s.z]}>
-            <boxGeometry args={[0.16, 0.05, 0.14]} />
-            <meshStandardMaterial color="#667e76" metalness={0.55} />
-          </mesh>
-        </group>
+      {legs.map((leg, index) => (
+        <Leg
+          key={leg.id}
+          bed={bed}
+          leg={leg}
+          measure={measure}
+          index={index}
+          enabled={mode === "support"}
+          selected={mode === "support" && leg.id === selectedSupport}
+          onSelect={() => onSelectSupport(leg.id)}
+          onMove={(x, z) => onMoveSupport(leg.id, x, z)}
+          onDragging={onDragging}
+        />
       ))}
       <group
         position={[0, bed.frontHeight + (d.length / 2) * Math.sin(d.rad), 0]}
@@ -173,18 +363,23 @@ function Structure({
         {Array.from({ length: bed.rows }, (_, r) =>
           Array.from({ length: bed.columns }, (_, c) => (
             <group
-              key={`${r}:${c}`}
+              key={panelKey(r, c)}
               position={[
-                c * (d.w + bed.gap) - (d.width - d.w) / 2,
+                d.columnCenters[c] - d.width / 2,
                 0,
-                (d.length - d.l) / 2 - r * (d.l + bed.gap),
+                d.length / 2 - d.rowCenters[r],
               ]}
+              rotation={[0, (panelRotation(bed, r, c) * Math.PI) / 180, 0]}
             >
               <Panel
                 w={d.w}
                 l={d.l}
                 removed={!isActive(bed, r, c)}
-                onClick={() => onToggle(r, c)}
+                selected={mode === "panel" && selectedPanel === panelKey(r, c)}
+                onClick={() => {
+                  if (mode === "remove") onToggle(r, c);
+                  else if (mode === "panel") onSelectPanel(r, c);
+                }}
               />
             </group>
           )),
@@ -199,24 +394,22 @@ function Structure({
             }
             const first = c;
             while (c < bed.columns && isActive(bed, r, c)) c++;
-            const width =
-              (c - first) * d.w + (c - first - 1) * bed.gap + bed.overhang * 2;
+            const span =
+              d.columnWidths.slice(first, c).reduce((a, n) => a + n, 0) +
+              (c - first - 1) * bed.gap;
             const x =
-              first * (d.w + bed.gap) -
+              d.columnCenters[first] -
+              d.columnWidths[first] / 2 -
               d.width / 2 +
-              (width - bed.overhang * 2) / 2;
-            for (const factor of [0.2, 0.8])
+              span / 2;
+            for (const [line, distance] of supportLines(bed, r).entries())
               chunks.push(
                 <mesh
-                  key={`${r}-${first}-${factor}`}
-                  position={[
-                    x,
-                    -0.065,
-                    d.length / 2 - r * (d.l + bed.gap) - factor * d.l,
-                  ]}
+                  key={`${r}-${first}-${line}`}
+                  position={[x, -0.065, d.length / 2 - distance]}
                   castShadow
                 >
-                  <boxGeometry args={[width, 0.09, 0.06]} />
+                  <boxGeometry args={[span + bed.overhang * 2, 0.09, 0.06]} />
                   <meshStandardMaterial
                     color="#bfc7c5"
                     metalness={0.7}
@@ -228,31 +421,29 @@ function Structure({
           return chunks;
         })}
       </group>
-      {sections(bed)
-        .filter((s) => s.rows === 2)
-        .map((s, index) => {
-          const width = s.columns * d.w + (s.columns - 1) * bed.gap;
-          const n = Math.ceil(width / bed.supportSpacing) + 1;
-          const length = 2 * d.l + bed.gap;
-          const local = s.row * (d.l + bed.gap) + length / 2;
-          return Array.from({ length: n }, (_, c) => (
-            <mesh
-              key={`ns${index}-${c}`}
-              position={[
-                s.column * (d.w + bed.gap) -
-                  d.width / 2 +
-                  (c * width) / (n - 1),
-                bed.frontHeight + local * Math.sin(d.rad) - 0.15,
-                d.depth / 2 - local * Math.cos(d.rad),
-              ]}
-              rotation={[d.rad, 0, 0]}
-              castShadow
-            >
-              <boxGeometry args={[0.06, 0.07, length]} />
-              <meshStandardMaterial color="#929f9d" metalness={0.6} />
-            </mesh>
-          ));
-        })}
+      {northSouthSections(bed).map((s, index) => {
+        const bounds = sectionDimensions(bed, s),
+          n = Math.ceil(bounds.width / bed.supportSpacing) + 1;
+        const local = bounds.startDistance + bounds.length / 2;
+        return Array.from({ length: n }, (_, c) => (
+          <mesh
+            key={`ns${index}-${c}`}
+            position={[
+              bounds.startX + (c * bounds.width) / (n - 1),
+              bed.frontHeight + local * Math.sin(d.rad) - 0.15,
+              d.depth / 2 - local * Math.cos(d.rad),
+            ]}
+            rotation={[d.rad, 0, 0]}
+            castShadow
+          >
+            <boxGeometry args={[0.06, 0.07, bounds.length]} />
+            <meshStandardMaterial color="#929f9d" metalness={0.6} />
+          </mesh>
+        ));
+      })}
+      {braces(bed).map((brace, i) => (
+        <BraceBeam key={`brace${i}`} from={brace.from} to={brace.to} />
+      ))}
       {measure && (
         <>
           <Line
@@ -290,10 +481,21 @@ function Structure({
 export default function Scene({
   bed,
   onToggle,
+  roof,
+  mode,
+  onModeChange,
+  selectedPanel,
+  selectedSupport,
+  onSelectPanel,
+  onSelectSupport,
+  onMoveSupport,
 }: {
   bed: Bed;
+  roof?: RoofImage;
   onToggle: (r: number, c: number) => void;
-}) {
+  onModeChange: (mode: EditMode) => void;
+} & EditingProps) {
+  const [dragging, setDragging] = useState(false);
   const [measure, setMeasure] = useState(false);
   const [view, setView] = useState("iso");
   const [reset, setReset] = useState(0);
@@ -327,6 +529,27 @@ export default function Scene({
           ))}
         </div>
       </div>
+      <div className="scene-editbar">
+        {(
+          [
+            ["remove", "Quitar paneles"],
+            ["panel", "Girar paneles"],
+            ["support", "Mover patas"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            aria-label={`${label} en 3D`}
+            className={mode === value ? "active" : ""}
+            onClick={() => {
+              setDragging(false);
+              onModeChange(value);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <SceneBoundary>
         <Suspense
           fallback={<div className="scene-fallback">Preparando modelo 3D…</div>}
@@ -354,7 +577,19 @@ export default function Scene({
               shadow-camera-bottom={-20}
               shadow-bias={-0.0004}
             />
-            <Structure bed={bed} measure={measure} onToggle={onToggle} />
+            {roof && <Roof roof={roof} />}
+            <Structure
+              bed={bed}
+              measure={measure}
+              onToggle={onToggle}
+              mode={mode}
+              selectedPanel={selectedPanel}
+              selectedSupport={selectedSupport}
+              onSelectPanel={onSelectPanel}
+              onSelectSupport={onSelectSupport}
+              onMoveSupport={onMoveSupport}
+              onDragging={setDragging}
+            />
             <Grid
               position={[0, -0.015, 0]}
               args={[100, 100]}
@@ -378,8 +613,9 @@ export default function Scene({
             />
             <OrbitControls
               makeDefault
+              enabled={!dragging}
               target={new Vector3(0, 0.5, 0)}
-              autoRotate={rotate}
+              autoRotate={rotate && !dragging}
               autoRotateSpeed={0.6}
               minDistance={2}
               maxDistance={80}

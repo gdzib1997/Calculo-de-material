@@ -5,8 +5,10 @@ import {
   dimensions,
   supports,
   warnings,
+  panelRotation,
+  isActive,
 } from "./model";
-import type { Project, MaterialId } from "./model";
+import type { Project, MaterialId, Bed } from "./model";
 import { download, safeName } from "./storage";
 const date = () =>
   new Date().toLocaleString("es-MX", { timeZone: "America/Mexico_City" }) +
@@ -24,6 +26,27 @@ function materialRows(p: Project, prices: Partial<Record<MaterialId, number>>) {
     money(m.price),
     money(m.price * m.quantity),
   ]);
+}
+function placementSummary(b: Bed) {
+  return `Separación E–O máxima: ${b.supportSpacing} m; separación N–S por fila: ${b.supportSpacingNS ?? "automática"} m. Patas con posición manual: ${supports(b).filter((s) => s.moved).length}. Paneles con giro individual: ${Object.values(b.panelRotations || {}).filter((n) => n !== 0).length}. Riel N–S: ${b.nsMode ?? "auto"}; Beam Clip por cruce: ${b.beamClipsPerCrossing ?? 1}; contravientos: ${b.bracingEnabled ? `${b.bracingCount ?? 2} diagonales, eje ${b.bracingAxis ?? "ew"}, longitud ${b.bracingLength ?? "geométrica"}` : "no"}.`;
+}
+function roofSummary(p: Project) {
+  return p.roof
+    ? `Imagen de techo: ${p.roof.name}; ${p.roof.width} × ${p.roof.length} m; posición X/Z ${p.roof.x}/${p.roof.z} m; giro ${p.roof.rotation}°; opacidad ${Math.round(p.roof.opacity * 100)}%.`
+    : "Sin imagen de techo.";
+}
+function rotatedRows(b: Bed) {
+  return Object.entries(b.panelRotations || {})
+    .filter(([, angle]) => angle !== 0)
+    .map(([key, angle]) => {
+      const [r, c] = key.split(":").map(Number);
+      return [
+        `${r + 1}`,
+        `${c + 1}`,
+        `${angle}°`,
+        isActive(b, r, c) ? "Activo" : "Retirado",
+      ];
+    });
 }
 function bedSummary(p: Project) {
   return p.beds.map((b) => {
@@ -106,8 +129,29 @@ export async function exportExcel(
     "Huella ancho × fondo",
     "Pata frontal / trasera",
     "Con bloques",
+    "Modo N–S",
+    "Separación E–O máxima (m)",
+    "Separación N–S por fila (m)",
+    "Beam Clip por cruce",
+    "Contravientos",
+    "Diagonales",
+    "Eje de contravientos",
+    "Longitud considerada (m)",
   ]);
-  bedSummary(p).forEach((row) => config.addRow(row));
+  bedSummary(p).forEach((row, i) => {
+    const b = p.beds[i];
+    config.addRow([
+      ...row,
+      b.nsMode ?? "auto",
+      b.supportSpacing,
+      b.supportSpacingNS ?? "automática",
+      b.beamClipsPerCrossing ?? 1,
+      b.bracingEnabled ? "Sí" : "No",
+      b.bracingEnabled ? (b.bracingCount ?? 2) : 0,
+      b.bracingAxis ?? "ew",
+      b.bracingLength ?? "geométrica",
+    ]);
+  });
   config.columns.forEach((c) => (c.width = 27));
   const detail = wb.addWorksheet("Detalle por cama");
   detail.addRow(["Cama", ...headers]);
@@ -135,6 +179,8 @@ export async function exportExcel(
     "Bloque ancho (m)",
     "Bloque fondo (m)",
     "Bloque alto (m)",
+    "ID estable de pata",
+    "Posición",
   ]);
   for (const b of p.beds)
     supports(b).forEach((s, i) =>
@@ -148,9 +194,56 @@ export async function exportExcel(
         b.bases ? b.baseWidth : 0,
         b.bases ? b.baseDepth : 0,
         b.bases ? b.baseHeight : 0,
+        s.id,
+        s.moved ? "Manual" : "Automática",
       ]),
     );
   legs.columns.forEach((c) => (c.width = 23));
+  const panels = wb.addWorksheet("Paneles");
+  panels.addRow([
+    "Cama",
+    "Fila",
+    "Columna",
+    "Estado",
+    "Giro individual (°)",
+    "Ancho del panel (m)",
+    "Largo del panel (m)",
+    "Centro X (m)",
+    "Distancia desde frente sobre el plano (m)",
+  ]);
+  for (const b of p.beds) {
+    const d = dimensions(b);
+    for (let r = 0; r < b.rows; r++)
+      for (let c = 0; c < b.columns; c++)
+        panels.addRow([
+          b.name,
+          r + 1,
+          c + 1,
+          isActive(b, r, c) ? "Activo" : "Retirado",
+          panelRotation(b, r, c),
+          d.w,
+          d.l,
+          d.columnCenters[c] - d.width / 2,
+          d.rowCenters[r],
+        ]);
+  }
+  panels.columns.forEach((c) => (c.width = 24));
+  if (p.roof) {
+    const roof = wb.addWorksheet("Techo");
+    roof.addRow(["Imagen del techo", p.roof.name]);
+    roof.addRow(["Ancho (m)", p.roof.width]);
+    roof.addRow(["Largo (m)", p.roof.length]);
+    roof.addRow(["Posición X (m)", p.roof.x]);
+    roof.addRow(["Posición Z (m)", p.roof.z]);
+    roof.addRow(["Giro (°)", p.roof.rotation]);
+    roof.addRow(["Opacidad", p.roof.opacity]);
+    const imageId = wb.addImage({ base64: p.roof.dataUrl, extension: "jpeg" });
+    roof.addImage(imageId, {
+      tl: { col: 0, row: 9 },
+      ext: { width: 600, height: 360 },
+    });
+    roof.columns = [{ width: 35 }, { width: 55 }];
+  }
   const library = wb.addWorksheet("Biblioteca de paneles");
   library.addRow(["Modelo", "Ancho (m)", "Largo (m)"]);
   for (const panel of p.panelLibrary || [])
@@ -158,6 +251,7 @@ export async function exportExcel(
   library.columns = [{ width: 45 }, { width: 18 }, { width: 18 }];
   const notes = wb.addWorksheet("Supuestos");
   notes.addRow(["Origen y límites del cálculo"]);
+  notes.addRow([roofSummary(p)]);
   notes.addRow([
     "Referencia: imagen aportada por el usuario; manuales Unirac Ascender sin verificar.",
   ]);
@@ -166,6 +260,7 @@ export async function exportExcel(
   ]);
   for (const b of p.beds) {
     notes.addRow([b.name]);
+    notes.addRow([placementSummary(b)]);
     warnings(b).forEach((w) => notes.addRow([w]));
     notes.addRow([
       `Panel ${b.panelWidth} × ${b.panelLength} m; separación ${b.gap} m; riel comercial ${b.railLength} m; riel de referencia supuesto ${b.referenceRailLength} m; volado ${b.overhang} m; separación de apoyos ${b.supportSpacing} m.`,
@@ -176,7 +271,7 @@ export async function exportExcel(
     r.alignment = { wrapText: true, vertical: "top" };
     r.height = 44;
   });
-  for (const sheet of [ws, config, detail, legs, library]) {
+  for (const sheet of [ws, config, detail, legs, library, panels]) {
     const hr = sheet.getRow(sheet === ws ? 6 : 1);
     hr.font = { bold: true, color: { argb: "FFFFFFFF" } };
     hr.fill = {
@@ -286,12 +381,37 @@ export async function exportPDF(
     pdf.text(`${b.name} · Alcance del cálculo`, 14, 20);
     pdf.setFontSize(10);
     let line = 32;
-    for (const w of warnings(b)) {
+    for (const w of [placementSummary(b), ...warnings(b)]) {
       const text = pdf.splitTextToSize(w, 180);
+      if (line + text.length * 5 + 8 > 275) {
+        pdf.addPage();
+        line = 22;
+        pdf.setFontSize(10);
+      }
       pdf.text(text, 14, line);
       line += text.length * 5 + 8;
     }
   }
+  for (const b of p.beds) {
+    const rows = rotatedRows(b);
+    if (rows.length) {
+      pdf.addPage();
+      pdf.setFontSize(14);
+      pdf.text(`${b.name} · Giros individuales`, 14, 20);
+      autoTable(pdf, {
+        startY: 28,
+        head: [["Fila", "Columna", "Giro", "Estado"]],
+        body: rows,
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [36, 74, 64] },
+      });
+    }
+  }
+  pdf.addPage();
+  pdf.setFontSize(12);
+  pdf.text("Referencia de techo", 14, 20);
+  pdf.setFontSize(10);
+  pdf.text(pdf.splitTextToSize(roofSummary(p), 180), 14, 30);
   pdf.addPage();
   pdf.setFontSize(15);
   pdf.text(`Total estimado: ${money(total)}`, 14, 22);
@@ -360,6 +480,7 @@ export async function exportWord(
     para(`Cliente: ${p.customer || "Sin especificar"} · ${date()}`),
     para("UNIRACK STUDIO · Estimación preliminar de materiales. Moneda: MXN."),
   ];
+  children.push(para(roofSummary(p)));
   if (image) {
     const bytes = Uint8Array.from(atob(image.split(",")[1]), (c) =>
       c.charCodeAt(0),
@@ -421,6 +542,10 @@ export async function exportWord(
           s.length.toFixed(3),
         ]),
       ]),
+      para(placementSummary(b)),
+      ...(rotatedRows(b).length
+        ? [table([["Fila", "Columna", "Giro", "Estado"], ...rotatedRows(b)])]
+        : []),
       ...warnings(b).map(para),
     );
   }

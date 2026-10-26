@@ -17,10 +17,10 @@ test("edición, biblioteca, guardado y recálculo completo", async ({ page }) =>
   ).toHaveValue("2.38");
   await expect(
     page.getByRole("spinbutton", {
-      name: "Cantidad Riel este–oeste",
+      name: "Cantidad Riel (total)",
       exact: true,
     }),
-  ).toHaveValue("19");
+  ).toHaveValue("31");
   await page.getByRole("button", { name: "Biblioteca", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Nombre del modelo de panel" })
@@ -86,17 +86,8 @@ test("edición, biblioteca, guardado y recálculo completo", async ({ page }) =>
   ).toHaveValue("16");
   await page.getByRole("spinbutton", { name: "Filas", exact: true }).fill("1");
   await expect(
-    page.getByRole("spinbutton", {
-      name: "Cantidad Riel norte–sur",
-      exact: true,
-    }),
+    page.getByRole("spinbutton", { name: "Cantidad Beam Clip", exact: true }),
   ).toHaveValue("0");
-  await expect(
-    page.getByRole("spinbutton", {
-      name: "Cantidad Riel norte–sur",
-      exact: true,
-    }),
-  ).toBeDisabled();
   await page
     .getByRole("spinbutton", { name: "Ángulo exacto", exact: true })
     .fill("25");
@@ -149,7 +140,7 @@ test("exporta archivos Word, PDF, Excel y JSON con datos reales", async ({
     .getByRole("textbox", { name: "Cliente u obra", exact: true })
     .fill("Obra de validación");
   await page
-    .getByRole("spinbutton", { name: "Precio Riel este–oeste", exact: true })
+    .getByRole("spinbutton", { name: "Precio Riel (total)", exact: true })
     .fill("200");
   for (const [name, extension] of [
     ["Documento PDF", ".pdf"],
@@ -171,13 +162,13 @@ test("exporta archivos Word, PDF, Excel y JSON con datos reales", async ({
     if (extension === ".xlsx") {
       const wb = new Workbook();
       await wb.xlsx.readFile(path);
-      expect(wb.worksheets).toHaveLength(6);
+      expect(wb.worksheets).toHaveLength(7);
       expect(wb.getWorksheet("Materiales")!.getCell("A1").value).toBe(
         "Prueba de exportación",
       );
-      expect(wb.getWorksheet("Materiales")!.getCell("B7").value).toBe(19);
+      expect(wb.getWorksheet("Materiales")!.getCell("B7").value).toBe(31);
       expect(wb.getWorksheet("Materiales")!.getCell("F7").value).toMatchObject({
-        result: 3800,
+        result: 6200,
       });
       expect(wb.getWorksheet("Patas y bloques")!.rowCount).toBeGreaterThan(2);
     }
@@ -189,7 +180,7 @@ test("exporta archivos Word, PDF, Excel y JSON con datos reales", async ({
   const dl = await pending;
   await dl.saveAs("/tmp/unirack-project.json");
   const data = JSON.parse(await readFile("/tmp/unirack-project.json", "utf8"));
-  expect(data.prices.railEW).toBe(200);
+  expect(data.prices.rail).toBe(200);
   expect(data.panelLibrary[0].width).toBe(1.14);
 });
 
@@ -201,13 +192,11 @@ test("el proyecto importado restaura biblioteca, medidas y materiales", async ({
   const fixture = createProject();
   fixture.name = "Prueba de exportación";
   fixture.prices = { railEW: 200 };
-  await page
-    .locator("input[type=file]")
-    .setInputFiles({
-      name: "proyecto.json",
-      mimeType: "application/json",
-      buffer: Buffer.from(JSON.stringify(fixture)),
-    });
+  await page.locator("input[type=file]").setInputFiles({
+    name: "proyecto.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(fixture)),
+  });
   await expect(page.getByRole("dialog")).toBeVisible();
   await page
     .getByRole("button", { name: "Abrir proyecto", exact: true })
@@ -217,16 +206,16 @@ test("el proyecto importado restaura biblioteca, medidas y materiales", async ({
   ).toHaveValue("Prueba de exportación");
   await expect(
     page.getByRole("spinbutton", {
-      name: "Precio Riel este–oeste",
+      name: "Precio Riel (total)",
       exact: true,
     }),
   ).toHaveValue("200");
   await expect(
     page.getByRole("spinbutton", {
-      name: "Cantidad Riel este–oeste",
+      name: "Cantidad Riel (total)",
       exact: true,
     }),
-  ).toHaveValue("19");
+  ).toHaveValue("31");
 });
 
 test("agrega camas y suma el total del proyecto", async ({ page }) => {
@@ -238,20 +227,20 @@ test("agrega camas y suma el total del proyecto", async ({ page }) => {
     .selectOption("project");
   await expect(
     page.getByRole("spinbutton", {
-      name: "Cantidad Riel este–oeste",
+      name: "Cantidad Riel (total)",
       exact: true,
     }),
-  ).toHaveValue("38");
+  ).toHaveValue("62");
   await page
     .getByRole("button", { name: "Duplicar cama", exact: true })
     .click();
   await expect(page.locator("#bed-select option")).toHaveCount(3);
   await expect(
     page.getByRole("spinbutton", {
-      name: "Cantidad Riel este–oeste",
+      name: "Cantidad Riel (total)",
       exact: true,
     }),
-  ).toHaveValue("57");
+  ).toHaveValue("93");
 });
 
 test("interfaz móvil sin desbordamiento y edición disponible", async ({

@@ -1,4 +1,6 @@
+import { validRasterDataUrl } from "./image-format";
 export type MaterialId =
+  | "rail"
   | "railEW"
   | "railNS"
   | "splice"
@@ -23,6 +25,20 @@ export const DEFAULT_PANEL: PanelPreset = {
   width: 1.14,
   length: 2.38,
 };
+export interface RoofImage {
+  dataUrl: string;
+  name: string;
+  width: number;
+  length: number;
+  x: number;
+  z: number;
+  rotation: number;
+  opacity: number;
+}
+export interface SupportPosition {
+  x: number;
+  z: number;
+}
 export interface Bed {
   id: string;
   name: string;
@@ -39,6 +55,15 @@ export interface Bed {
   railLength: number;
   referenceRailLength: number;
   supportSpacing: number;
+  supportSpacingNS?: number;
+  nsMode?: "auto" | "include" | "exclude";
+  beamClipsPerCrossing?: number;
+  bracingEnabled?: boolean;
+  bracingCount?: number;
+  bracingAxis?: "ew" | "ns";
+  bracingLength?: number;
+  supportOverrides?: Record<string, SupportPosition>;
+  panelRotations?: Record<string, number>;
   bases: boolean;
   baseWidth: number;
   baseDepth: number;
@@ -54,6 +79,7 @@ export interface Project {
   updatedAt: string;
   prices?: Partial<Record<MaterialId, number>>;
   panelLibrary?: PanelPreset[];
+  roof?: RoofImage;
 }
 export interface Material {
   id: MaterialId;
@@ -65,8 +91,7 @@ export interface Material {
   price: number;
 }
 export const MATERIALS: { id: MaterialId; name: string; unit: string }[] = [
-  { id: "railEW", name: "Riel este–oeste", unit: "pza" },
-  { id: "railNS", name: "Riel norte–sur", unit: "pza" },
+  { id: "rail", name: "Riel (total)", unit: "pza" },
   { id: "splice", name: "Empalme · Splice", unit: "pza" },
   { id: "midClamp", name: "Abrazadera intermedia · Mid Clamp", unit: "pza" },
   { id: "endClamp", name: "Abrazadera final · End Clamp", unit: "pza" },
@@ -121,6 +146,12 @@ export function createBed(index = 1): Bed {
     railLength: 4.7,
     referenceRailLength: 4.7,
     supportSpacing: 1.52,
+    supportSpacingNS: 1.5,
+    nsMode: "auto",
+    beamClipsPerCrossing: 1,
+    bracingEnabled: false,
+    bracingCount: 2,
+    bracingAxis: "ew",
     panelPresetId: DEFAULT_PANEL.id,
     bases: true,
     baseWidth: 0.5,
@@ -149,11 +180,35 @@ export function isActive(b: Bed, r: number, c: number) {
     !b.removed.includes(panelKey(r, c))
   );
 }
+export function panelRotation(b: Bed, r: number, c: number) {
+  return b.panelRotations?.[panelKey(r, c)] ?? 0;
+}
 export function dimensions(b: Bed) {
   const w = b.orientation === "portrait" ? b.panelWidth : b.panelLength;
   const l = b.orientation === "portrait" ? b.panelLength : b.panelWidth;
-  const width = b.columns * w + (b.columns - 1) * b.gap;
-  const length = b.rows * l + (b.rows - 1) * b.gap;
+  const extents = (r: number, c: number) => {
+    const a = (panelRotation(b, r, c) * Math.PI) / 180;
+    return {
+      w: Math.abs(Math.cos(a)) * w + Math.abs(Math.sin(a)) * l,
+      l: Math.abs(Math.sin(a)) * w + Math.abs(Math.cos(a)) * l,
+    };
+  };
+  const columnWidths = Array.from({ length: b.columns }, (_, c) =>
+    Math.max(...Array.from({ length: b.rows }, (_, r) => extents(r, c).w)),
+  );
+  const rowLengths = Array.from({ length: b.rows }, (_, r) =>
+    Math.max(...Array.from({ length: b.columns }, (_, c) => extents(r, c).l)),
+  );
+  const centers = (values: number[]) =>
+    values.map(
+      (v, i) =>
+        values.slice(0, i).reduce((a, n) => a + n, 0) + i * b.gap + v / 2,
+    );
+  const columnCenters = centers(columnWidths),
+    rowCenters = centers(rowLengths);
+  const width =
+    columnWidths.reduce((a, n) => a + n, 0) + (b.columns - 1) * b.gap;
+  const length = rowLengths.reduce((a, n) => a + n, 0) + (b.rows - 1) * b.gap;
   const rad = (b.angle * Math.PI) / 180;
   return {
     w,
@@ -161,9 +216,46 @@ export function dimensions(b: Bed) {
     width,
     length,
     rad,
+    columnWidths,
+    rowLengths,
+    columnCenters,
+    rowCenters,
     depth: length * Math.cos(rad),
     rearHeight: b.frontHeight + length * Math.sin(rad),
   };
+}
+export function sectionDimensions(b: Bed, section: Section) {
+  const d = dimensions(b);
+  return {
+    width:
+      d.columnWidths
+        .slice(section.column, section.column + section.columns)
+        .reduce((a, n) => a + n, 0) +
+      (section.columns - 1) * b.gap,
+    length:
+      d.rowLengths
+        .slice(section.row, section.row + section.rows)
+        .reduce((a, n) => a + n, 0) +
+      (section.rows - 1) * b.gap,
+    startX:
+      d.columnCenters[section.column] -
+      d.columnWidths[section.column] / 2 -
+      d.width / 2,
+    startDistance: d.rowCenters[section.row] - d.rowLengths[section.row] / 2,
+  };
+}
+export function supportLines(b: Bed, row: number) {
+  const d = dimensions(b),
+    length = d.rowLengths[row],
+    center = d.rowCenters[row];
+  const distance =
+    b.supportSpacingNS === undefined
+      ? length * 0.6
+      : Math.min(
+          b.supportSpacingNS,
+          Math.max(0.05, length * Math.cos(d.rad) - 0.1),
+        ) / Math.cos(d.rad);
+  return [center - distance / 2, center + distance / 2];
 }
 export function activeCount(b: Bed) {
   let n = 0;
@@ -233,10 +325,18 @@ export function referenceQuantity(rows: number, columns: number) {
   };
 }
 export interface Support {
+  id: string;
   x: number;
   z: number;
   length: number;
   row: number;
+  line: number;
+  slot: number;
+  runFirst: number;
+  autoX: number;
+  autoZ: number;
+  moved: boolean;
+  constrained: boolean;
 }
 export function supports(b: Bed): Support[] {
   const d = dimensions(b),
@@ -250,64 +350,194 @@ export function supports(b: Bed): Support[] {
       }
       const first = c;
       while (c < b.columns && isActive(b, r, c)) c++;
-      const start = first * (d.w + b.gap) - d.width / 2;
-      const span = (c - first) * d.w + (c - first - 1) * b.gap;
+      const start =
+        d.columnCenters[first] - d.columnWidths[first] / 2 - d.width / 2;
+      const span =
+        d.columnWidths.slice(first, c).reduce((a, n) => a + n, 0) +
+        (c - first - 1) * b.gap;
       const inset = Math.min(0.2, span / 4),
         available = span - 2 * inset;
       const n = Math.max(2, Math.ceil(available / b.supportSpacing) + 1);
       for (let i = 0; i < n; i++)
-        for (const f of [0.2, 0.8]) {
-          const local = r * (d.l + b.gap) + d.l * f;
+        for (const [line, local] of supportLines(b, r).entries()) {
+          const id = `r${r}:c${first}:s${i}:n${line}`;
+          const autoX = start + inset + (available * i) / (n - 1),
+            autoZ = d.depth / 2 - local * Math.cos(d.rad);
+          const manual = b.supportOverrides?.[id];
+          const x = Math.max(
+            -d.width / 2,
+            Math.min(d.width / 2, manual?.x ?? autoX),
+          );
+          const z = Math.max(
+            -d.depth / 2,
+            Math.min(d.depth / 2, manual?.z ?? autoZ),
+          );
           result.push({
-            x: start + inset + (available * i) / (n - 1),
-            z: d.depth / 2 - local * Math.cos(d.rad),
-            length: b.frontHeight + local * Math.sin(d.rad),
+            id,
+            x,
+            z,
+            autoX,
+            autoZ,
             row: r,
+            line,
+            slot: i,
+            runFirst: first,
+            moved: !!manual,
+            constrained: !!manual && (x !== manual.x || z !== manual.z),
+            length: b.frontHeight + (d.depth / 2 - z) * Math.tan(d.rad),
           });
         }
     }
   }
   return result;
 }
+export function supportNeighbours(b: Bed, id: string) {
+  const all = supports(b),
+    current = all.find((s) => s.id === id);
+  if (!current) return { previous: undefined, opposite: undefined };
+  return {
+    previous: all
+      .filter(
+        (s) =>
+          s.row === current.row &&
+          s.runFirst === current.runFirst &&
+          s.line === current.line &&
+          s.x < current.x - 0.001,
+      )
+      .sort((a, b) => b.x - a.x)[0],
+    opposite: all.find(
+      (s) =>
+        s.row === current.row &&
+        s.runFirst === current.runFirst &&
+        s.slot === current.slot &&
+        s.line !== current.line,
+    ),
+  };
+}
+export function northSouthSections(b: Bed) {
+  return sections(b).filter(
+    (s) => b.nsMode !== "exclude" && (b.nsMode === "include" || s.rows > 1),
+  );
+}
+export interface Brace {
+  from: [number, number, number];
+  to: [number, number, number];
+  length: number;
+  materialLength: number;
+}
+export function braces(b: Bed): Brace[] {
+  if (!b.bracingEnabled || !activeCount(b)) return [];
+  const all = supports(b),
+    groups = new Map<string, Support[]>();
+  for (const leg of all) {
+    const key =
+      b.bracingAxis === "ns"
+        ? `${leg.row}:${leg.runFirst}:${leg.slot}`
+        : `${leg.row}:${leg.runFirst}:${leg.line}`;
+    const g = groups.get(key) || [];
+    g.push(leg);
+    groups.set(key, g);
+  }
+  const pairs = [...groups.values()]
+    .filter((g) => g.length >= 2)
+    .map((g) =>
+      g.sort((a, c) => (b.bracingAxis === "ns" ? c.z - a.z : a.x - c.x)),
+    );
+  if (!pairs.length) return [];
+  return Array.from({ length: b.bracingCount ?? 2 }, (_, i) => {
+    const g = pairs[Math.floor(i / 2) % pairs.length];
+    const first = i % 2 ? g[g.length - 1] : g[0],
+      last = i % 2 ? g[0] : g[g.length - 1];
+    const from: [number, number, number] = [first.x, 0.05, first.z],
+      to: [number, number, number] = [
+        last.x,
+        Math.max(0.1, last.length - 0.05),
+        last.z,
+      ];
+    const length = Math.hypot(
+      to[0] - from[0],
+      to[1] - from[1],
+      to[2] - from[2],
+    );
+    return { from, to, length, materialLength: b.bracingLength ?? length };
+  });
+}
+export function railBreakdown(b: Bed) {
+  const eastWest = Math.ceil(
+    (sections(b).reduce(
+      (n, s) => n + (referenceQuantity(s.rows, s.columns).railEW ?? 0),
+      0,
+    ) *
+      b.referenceRailLength) /
+      b.railLength,
+  );
+  let northSouth = 0,
+    beamClip = 0;
+  for (const section of northSouthSections(b)) {
+    const bounds = sectionDimensions(b, section),
+      lines = Math.ceil(bounds.width / b.supportSpacing) + 1;
+    northSouth += lines * Math.ceil(bounds.length / b.railLength);
+    beamClip += lines * section.rows * 2 * (b.beamClipsPerCrossing ?? 1);
+  }
+  const bracing = braces(b).reduce(
+    (n, brace) => n + Math.ceil(brace.materialLength / b.railLength),
+    0,
+  );
+  return {
+    eastWest,
+    northSouth,
+    bracing,
+    beamClip,
+    total: eastWest + northSouth + bracing,
+  };
+}
+function materialPrice(
+  id: MaterialId,
+  prices: Partial<Record<MaterialId, number>>,
+) {
+  return id === "rail"
+    ? (prices.rail ?? prices.railEW ?? prices.railNS ?? 0)
+    : (prices[id] ?? 0);
+}
 export function calculate(
   b: Bed,
   prices: Partial<Record<MaterialId, number>> = {},
 ): Material[] {
   const q: Partial<Record<MaterialId, number>> = {};
-  for (const section of sections(b)) {
+  for (const section of sections(b))
     for (const [id, n] of Object.entries(
       referenceQuantity(section.rows, section.columns),
     ))
       q[id as MaterialId] = (q[id as MaterialId] ?? 0) + n;
-  }
-  q.railEW = Math.ceil(
-    ((q.railEW ?? 0) * b.referenceRailLength) / b.railLength,
-  );
-  // Riel N–S sólo en tramos con dos filas: regla solicitada por el usuario.
-  const d = dimensions(b);
-  q.railNS = sections(b)
-    .filter((s) => s.rows > 1)
-    .reduce(
-      (sum, s) =>
-        sum +
-        Math.ceil(
-          (s.columns * d.w + (s.columns - 1) * b.gap) / b.supportSpacing + 1,
-        ) *
-          Math.ceil((2 * d.l + b.gap) / b.railLength),
-      0,
-    );
+  const rails = railBreakdown(b);
+  q.rail = rails.total;
+  q.beamClip = rails.beamClip;
   q.leg = supports(b).length;
   q.concrete = b.bases ? q.leg : 0;
+  // Conserva los ajustes de versiones anteriores sumando las partidas antiguas.
+  const legacyRail =
+    b.overrides.railEW !== undefined || b.overrides.railNS !== undefined;
+  const manualRail =
+    b.overrides.rail ??
+    (legacyRail
+      ? (b.overrides.railEW ?? rails.eastWest) +
+        (rails.northSouth === 0
+          ? 0
+          : (b.overrides.railNS ?? rails.northSouth)) +
+        rails.bracing
+      : undefined);
   return MATERIALS.map((m) => ({
     ...m,
     calculated: q[m.id] ?? 0,
     quantity:
-      m.id === "railNS" && q.railNS === 0
-        ? 0
+      m.id === "rail"
+        ? (manualRail ?? q.rail ?? 0)
         : (b.overrides[m.id] ?? q[m.id] ?? 0),
     overridden:
-      b.overrides[m.id] !== undefined && !(m.id === "railNS" && q.railNS === 0),
-    price: prices[m.id] ?? 0,
+      m.id === "rail"
+        ? manualRail !== undefined
+        : b.overrides[m.id] !== undefined,
+    price: materialPrice(m.id, prices),
   }));
 }
 export function aggregate(
@@ -320,7 +550,7 @@ export function aggregate(
     calculated: all.reduce((a, items) => a + items[i].calculated, 0),
     quantity: all.reduce((a, items) => a + items[i].quantity, 0),
     overridden: all.some((items) => items[i].overridden),
-    price: prices[m.id] ?? 0,
+    price: materialPrice(m.id, prices),
   }));
 }
 export function warnings(b: Bed) {
@@ -345,6 +575,41 @@ export function warnings(b: Bed) {
     list.push(
       "Hay cantidades manuales fijas: no cambiarán al quitar paneles hasta restablecer el cálculo automático.",
     );
+  if (Object.keys(b.panelRotations || {}).length)
+    list.push(
+      "Los giros individuales amplían las celdas para evitar solapamientos. Los herrajes de la tabla no validan un montaje mixto; revisar fijaciones y rieles.",
+    );
+  if (Object.keys(b.supportOverrides || {}).length)
+    list.push(
+      "Hay patas desplazadas. Sus alturas y bloques siguen sus posiciones; se debe revisar su conexión y alineación con los rieles esquemáticos.",
+    );
+  if (supports(b).some((s) => s.constrained))
+    list.push(
+      "Al cambiar la huella, algunas posiciones manuales quedaron fuera y se limitaron a sus bordes. Revisa esas patas.",
+    );
+  if (
+    b.supportSpacingNS !== undefined &&
+    dimensions(b).rowLengths.some(
+      (l) => l * Math.cos(dimensions(b).rad) - 0.1 < b.supportSpacingNS!,
+    )
+  )
+    list.push(
+      "La separación N–S solicitada no cabe en alguna fila: se limita a su fondo horizontal menos 10 cm. Revisa la separación efectiva.",
+    );
+  list.push(
+    "Rieles agrupados: E–O + N–S habilitados + contravientos. Beam Clip automático: líneas N–S × 2 cruces por fila × clips por cruce; factor editable sin validación del fabricante.",
+  );
+  if (b.bracingEnabled)
+    list.push(
+      "Contravientos: una diagonal por unidad; piezas por diagonal redondeadas hacia arriba, sin aprovechar sobrantes entre diagonales. Su colocación y conexiones son esquemáticas, pendientes de revisión estructural.",
+    );
+  if (
+    b.overrides.rail === undefined &&
+    (b.overrides.railEW !== undefined || b.overrides.railNS !== undefined)
+  )
+    list.push(
+      "Se conservaron ajustes antiguos de rieles dentro del total agrupado. Restablece el riel para usar el cálculo automático actual.",
+    );
   return list;
 }
 export function validateProject(input: unknown): Project {
@@ -365,7 +630,10 @@ export function validateProject(input: unknown): Project {
     (typeof p.prices !== "object" ||
       Object.entries(p.prices).some(
         ([id, v]) =>
-          !MATERIALS.some((m) => m.id === id) ||
+          !(
+            ["railEW", "railNS"].includes(id) ||
+            MATERIALS.some((m) => m.id === id)
+          ) ||
           typeof v !== "number" ||
           !Number.isFinite(v) ||
           v < 0 ||
@@ -392,6 +660,31 @@ export function validateProject(input: unknown): Project {
       new Set(p.panelLibrary.map((v) => v.id)).size !== p.panelLibrary.length)
   )
     throw new Error("Biblioteca de paneles inválida.");
+  if (p.roof) {
+    const r = p.roof;
+    if (
+      typeof r.name !== "string" ||
+      typeof r.dataUrl !== "string" ||
+      r.dataUrl.length > 2500000 ||
+      !validRasterDataUrl(r.dataUrl) ||
+      !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(
+        r.dataUrl,
+      )
+    )
+      throw new Error(
+        "Imagen de techo inválida; sólo JPEG, PNG o WebP locales.",
+      );
+    for (const [key, min, max] of [
+      ["width", 0.5, 200],
+      ["length", 0.5, 200],
+      ["x", -100, 100],
+      ["z", -100, 100],
+      ["rotation", 0, 360],
+      ["opacity", 0.1, 1],
+    ] as const)
+      if (!Number.isFinite(r[key]) || r[key] < min || r[key] > max)
+        throw new Error("Medidas de techo inválidas.");
+  }
   const ids = new Set<string>();
   const ranges: Record<string, [number, number]> = {
     rows: [1, 6],
@@ -420,6 +713,65 @@ export function validateProject(input: unknown): Project {
     )
       throw new Error("Datos de cama inválidos.");
     ids.add(b.id);
+    if (
+      b.nsMode !== undefined &&
+      !["auto", "include", "exclude"].includes(b.nsMode)
+    )
+      throw new Error("Opción de rieles norte-sur inválida.");
+    if (b.bracingAxis !== undefined && !["ew", "ns"].includes(b.bracingAxis))
+      throw new Error("Eje de contravientos inválido.");
+    if (b.bracingEnabled !== undefined && typeof b.bracingEnabled !== "boolean")
+      throw new Error("Opción de contravientos inválida.");
+    for (const [key, min, max, integer] of [
+      ["beamClipsPerCrossing", 1, 8, true],
+      ["bracingCount", 0, 100, true],
+      ["bracingLength", 0.1, 50, false],
+    ] as const) {
+      const v = b[key];
+      if (
+        v !== undefined &&
+        (!Number.isFinite(v) ||
+          v < min ||
+          v > max ||
+          (integer && !Number.isInteger(v)))
+      )
+        throw new Error(`Valor inválido: ${key}`);
+    }
+
+    if (
+      b.supportSpacingNS !== undefined &&
+      (!Number.isFinite(b.supportSpacingNS) ||
+        b.supportSpacingNS < 0.1 ||
+        b.supportSpacingNS > 3)
+    )
+      throw new Error("Separación norte-sur inválida.");
+    if (
+      b.panelRotations !== undefined &&
+      (typeof b.panelRotations !== "object" ||
+        b.panelRotations === null ||
+        Array.isArray(b.panelRotations) ||
+        Object.entries(b.panelRotations).some(
+          ([key, v]) =>
+            !/^\d+:\d+$/.test(key) || !Number.isFinite(v) || v < 0 || v >= 360,
+        ))
+    )
+      throw new Error("Giros de paneles inválidos.");
+    if (
+      b.supportOverrides !== undefined &&
+      (typeof b.supportOverrides !== "object" ||
+        b.supportOverrides === null ||
+        Array.isArray(b.supportOverrides) ||
+        Object.entries(b.supportOverrides).some(
+          ([key, v]) =>
+            !/^r\d+:c\d+:s\d+:n[01]$/.test(key) ||
+            !v ||
+            !Number.isFinite(v.x) ||
+            !Number.isFinite(v.z) ||
+            Math.abs(v.x) > 100 ||
+            Math.abs(v.z) > 100,
+        ))
+    )
+      throw new Error("Posiciones de patas inválidas.");
     for (const [key, [min, max]] of Object.entries(ranges)) {
       const n = b[key as keyof Bed];
       if (typeof n !== "number" || !Number.isFinite(n) || n < min || n > max)
@@ -437,7 +789,10 @@ export function validateProject(input: unknown): Project {
       typeof b.overrides !== "object" ||
       Object.entries(b.overrides).some(
         ([id, v]) =>
-          !MATERIALS.some((m) => m.id === id) ||
+          !(
+            ["railEW", "railNS"].includes(id) ||
+            MATERIALS.some((m) => m.id === id)
+          ) ||
           typeof v !== "number" ||
           !Number.isFinite(v) ||
           v < 0 ||

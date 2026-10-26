@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 export default function Field({
   label,
   value,
@@ -18,8 +18,8 @@ export default function Field({
   unit?: string;
   integer?: boolean;
 }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
+  const [draft, setDraft] = useState("");
+  const [focused, setFocused] = useState(false);
   return (
     <label className="field">
       <span>{label}</span>
@@ -28,7 +28,11 @@ export default function Field({
           aria-label={label}
           type="number"
           inputMode="decimal"
-          value={draft}
+          value={focused ? draft : String(value)}
+          onFocus={() => {
+            setDraft(String(value));
+            setFocused(true);
+          }}
           min={min}
           max={max}
           step={integer ? 1 : step}
@@ -44,7 +48,7 @@ export default function Field({
             )
               onChange(n);
           }}
-          onBlur={() => setDraft(String(value))}
+          onBlur={() => setFocused(false)}
         />
         {unit && <span>{unit}</span>}
       </div>

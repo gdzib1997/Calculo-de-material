@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   BookOpen,
+  ImagePlus,
   ArrowDownToLine,
   ArrowUpFromLine,
   Box,
@@ -47,6 +48,10 @@ import type { Bed, MaterialId, Project, PanelPreset } from "./lib/model";
 import { download, loadProject, safeName, saveProject } from "./lib/storage";
 import Field from "./components/Field";
 import PanelLibrary from "./components/PanelLibrary";
+import RoofEditor from "./components/RoofEditor";
+import RailOptions from "./components/RailOptions";
+import { PanelEditor, LegEditor } from "./components/GeometryEditor";
+import type { EditMode } from "./components/Scene";
 const Scene = lazy(() => import("./components/Scene"));
 const money = (n: number) =>
   new Intl.NumberFormat("es-MX", {
@@ -67,7 +72,12 @@ function App() {
   const [saveState, setSaveState] = useState(true);
   const [scope, setScope] = useState<"bed" | "project">("bed");
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [settings, setSettings] = useState<"layout" | "structure">("layout");
+  const [settings, setSettings] = useState<"layout" | "structure" | "roof">(
+    "layout",
+  );
+  const [editMode, setEditMode] = useState<EditMode>("remove");
+  const [panelSelection, setPanelSelection] = useState("0:0");
+  const [supportSelection, setSupportSelection] = useState("");
   const [showDetails, setShowDetails] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const importPending = useRef<Project | null>(null);
@@ -83,6 +93,13 @@ function App() {
   );
   const dims = dimensions(bed);
   const geometry = supports(bed);
+  const [selectedRow, selectedColumn] = panelSelection.split(":").map(Number);
+  const selectedPanel =
+    selectedRow < bed.rows && selectedColumn < bed.columns
+      ? panelSelection
+      : "0:0";
+  const selectedSupport =
+    geometry.find((s) => s.id === supportSelection)?.id || geometry[0]?.id;
   const totalArea = project.beds.reduce(
     (n, b) => n + activeCount(b) * b.panelWidth * b.panelLength,
     0,
@@ -119,6 +136,15 @@ function App() {
   function resize(key: "rows" | "columns", n: number) {
     patch({
       [key]: n,
+      panelRotations: Object.fromEntries(
+        Object.entries(bed.panelRotations || {}).filter(([cell]) => {
+          const [r, c] = cell.split(":").map(Number);
+          return (
+            r < (key === "rows" ? n : bed.rows) &&
+            c < (key === "columns" ? n : bed.columns)
+          );
+        }),
+      ),
       removed: bed.removed.filter((k) => {
         const [r, c] = k.split(":").map(Number);
         return (
@@ -135,6 +161,53 @@ function App() {
         ? bed.removed.filter((x) => x !== k)
         : [...bed.removed, k],
     });
+  }
+  function selectPanel(key: string) {
+    setPanelSelection(key);
+    setEditMode("panel");
+    setTab("layout");
+  }
+  function rotatePanel(angle: number) {
+    const rotations = { ...bed.panelRotations };
+    if (angle === 0) delete rotations[selectedPanel];
+    else rotations[selectedPanel] = angle;
+    patch({ panelRotations: rotations });
+    setEditMode("panel");
+  }
+  function selectSupport(id: string) {
+    setSupportSelection(id);
+    setEditMode("support");
+    setTab("legs");
+  }
+  function moveSupport(id: string, x: number, z: number) {
+    setEditMode("support");
+    setSupportSelection(id);
+    changeProject((p) => ({
+      ...p,
+      beds: p.beds.map((b) => {
+        if (b.id !== bed.id) return b;
+        const d = dimensions(b);
+        return {
+          ...b,
+          supportOverrides: {
+            ...b.supportOverrides,
+            [id]: {
+              x: Math.max(-d.width / 2, Math.min(d.width / 2, x)),
+              z: Math.max(-d.depth / 2, Math.min(d.depth / 2, z)),
+            },
+          },
+        };
+      }),
+    }));
+  }
+  function resetSupport(id: string) {
+    const next = { ...bed.supportOverrides };
+    delete next[id];
+    patch({ supportOverrides: next });
+  }
+  function changeMode(mode: EditMode) {
+    setEditMode(mode);
+    setTab(mode === "support" ? "legs" : "layout");
   }
   function addBed() {
     if (project.beds.length >= 30) {
@@ -195,7 +268,7 @@ function App() {
   async function importFile(file?: File) {
     if (!file) return;
     try {
-      if (file.size > 2_000_000) throw new Error("El archivo excede 2 MB.");
+      if (file.size > 8_000_000) throw new Error("El archivo excede 8 MB.");
       const next = validateProject(JSON.parse(await file.text()));
       importPending.current = next;
       setImportName(next.name);
@@ -234,6 +307,10 @@ function App() {
   function restoreOverride(id: MaterialId) {
     const next = { ...bed.overrides };
     delete next[id];
+    if (id === "rail") {
+      delete next.railEW;
+      delete next.railNS;
+    }
     patch({ overrides: next });
   }
   const requiredManual = Object.keys(bed.overrides).length;
@@ -253,7 +330,7 @@ function App() {
           <span className="environment-dot" /> ESPACIO DE DISEÑO SOLAR
         </div>
         <div className="header-right">
-          <span className="version-tag">BETA 01</span>
+          <span className="version-tag">BETA 02</span>
           <div className="avatar">GS</div>
         </div>
       </header>
@@ -499,6 +576,12 @@ function App() {
               >
                 <Settings2 size={14} /> Estructura
               </button>
+              <button
+                className={settings === "roof" ? "active" : ""}
+                onClick={() => setSettings("roof")}
+              >
+                <ImagePlus size={14} /> Techo
+              </button>
             </div>
             {settings === "layout" ? (
               <div className="settings-content">
@@ -661,9 +744,10 @@ function App() {
                   </p>
                 </div>
               </div>
-            ) : (
+            ) : settings === "structure" ? (
               <div className="settings-content">
                 <div className="section-label">RIELES Y APOYOS</div>
+                <RailOptions bed={bed} onChange={patch} />
                 <Field
                   label="Longitud comercial del riel"
                   value={bed.railLength}
@@ -685,13 +769,31 @@ function App() {
                   suposición antes de comprar.
                 </p>
                 <Field
-                  label="Separación máxima entre apoyos"
+                  label="Separación máxima entre patas E–O"
                   value={bed.supportSpacing}
                   onChange={(n) => patch({ supportSpacing: n })}
                   min={0.3}
                   max={3}
                   unit="m"
                 />
+                <Field
+                  label="Separación entre patas N–S por fila"
+                  value={Number(
+                    (
+                      bed.supportSpacingNS ?? dims.l * 0.6 * Math.cos(dims.rad)
+                    ).toFixed(3),
+                  )}
+                  onChange={(n) => patch({ supportSpacingNS: n })}
+                  min={0.1}
+                  max={3}
+                  unit="m"
+                />
+                <p className="help-text">
+                  N–S es la distancia horizontal entre las dos líneas de patas
+                  de cada fila. Si no cabe, se limita al fondo de esa fila menos
+                  10 cm. En «Patas y bases» puedes editar cada separación
+                  individual.
+                </p>
                 <div className="field-grid">
                   <Field
                     label="Altura frontal libre"
@@ -764,6 +866,12 @@ function App() {
                   </p>
                 </div>
               </div>
+            ) : (
+              <RoofEditor
+                roof={project.roof}
+                onChange={(roof) => changeProject((p) => ({ ...p, roof }))}
+                onError={setToast}
+              />
             )}
             <div className="sidebar-footer">
               <span className="environment-dot" /> Cálculo automático activado
@@ -799,7 +907,18 @@ function App() {
                   </div>
                 }
               >
-                <Scene bed={bed} onToggle={toggle} />
+                <Scene
+                  bed={bed}
+                  onToggle={toggle}
+                  roof={project.roof}
+                  mode={editMode}
+                  onModeChange={changeMode}
+                  selectedPanel={selectedPanel}
+                  selectedSupport={selectedSupport}
+                  onSelectPanel={(r, c) => selectPanel(panelKey(r, c))}
+                  onSelectSupport={selectSupport}
+                  onMoveSupport={moveSupport}
+                />
               </Suspense>
               <div className="model-info">
                 <span>
@@ -903,8 +1022,8 @@ function App() {
                                 <span>
                                   {m.name}
                                   <small>
-                                    {m.id === "railEW" || m.id === "railNS"
-                                      ? `${scope === "project" ? "Longitud según cada cama" : `${bed.railLength.toFixed(2)} m / pieza`}${m.id === "railNS" && sections(bed).every((s) => s.rows === 1) ? " · Excluido en cama sencilla" : ""}`
+                                    {m.id === "rail"
+                                      ? `${scope === "project" ? "Longitud según cada cama" : `${bed.railLength.toFixed(2)} m / pieza`} · estructura y contravientos`
                                       : `Componente ${String(i + 1).padStart(2, "0")}`}
                                   </small>
                                 </span>
@@ -926,11 +1045,7 @@ function App() {
                                   max={100000}
                                   step={1}
                                   value={m.quantity}
-                                  disabled={
-                                    scope === "project" ||
-                                    (m.id === "railNS" &&
-                                      sections(bed).every((s) => s.rows === 1))
-                                  }
+                                  disabled={scope === "project"}
                                   onChange={(e) => {
                                     if (e.target.value !== "")
                                       setOverride(m.id, Number(e.target.value));
@@ -1013,11 +1128,36 @@ function App() {
               )}
               {tab === "layout" && (
                 <div className="panel-editor">
+                  <PanelEditor
+                    bed={bed}
+                    selected={selectedPanel}
+                    onSelect={selectPanel}
+                    onRotate={rotatePanel}
+                    onToggle={() => {
+                      const [r, c] = selectedPanel.split(":").map(Number);
+                      toggle(r, c);
+                    }}
+                  />
+                  <div className="panel-mode">
+                    <button
+                      className={editMode === "remove" ? "active" : ""}
+                      onClick={() => setEditMode("remove")}
+                    >
+                      Quitar / reponer
+                    </button>
+                    <button
+                      className={editMode === "panel" ? "active" : ""}
+                      onClick={() => setEditMode("panel")}
+                    >
+                      Seleccionar para girar
+                    </button>
+                  </div>
                   <div className="table-toolbar">
                     <div>
                       <h3>Distribución de paneles</h3>
                       <p>
-                        Selecciona cualquier panel para quitarlo o reponerlo.
+                        Selecciona el modo para quitar, reponer o girar cada
+                        panel.
                       </p>
                     </div>
                     <button
@@ -1044,9 +1184,17 @@ function App() {
                               : "panel-tile removed"
                           }
                           key={`${r}:${c}`}
-                          onClick={() => toggle(r, c)}
+                          onClick={() => {
+                            if (editMode === "remove") toggle(r, c);
+                            else selectPanel(panelKey(r, c));
+                          }}
                         >
-                          <Grid2X2 size={22} />
+                          <Grid2X2
+                            size={22}
+                            style={{
+                              transform: `rotate(${bed.panelRotations?.[panelKey(r, c)] ?? 0}deg)`,
+                            }}
+                          />
                           <span>
                             {r + 1}.{c + 1}
                           </span>
@@ -1071,6 +1219,14 @@ function App() {
               )}
               {tab === "legs" && (
                 <div className="legs-tab">
+                  <LegEditor
+                    bed={bed}
+                    selected={selectedSupport}
+                    onSelect={selectSupport}
+                    onMove={moveSupport}
+                    onReset={resetSupport}
+                    onResetAll={() => patch({ supportOverrides: {} })}
+                  />
                   <div className="table-toolbar">
                     <div>
                       <h3>Despiece geométrico de patas</h3>
@@ -1125,8 +1281,23 @@ function App() {
                       </thead>
                       <tbody>
                         {geometry.map((s, i) => (
-                          <tr key={i}>
-                            <td>P-{String(i + 1).padStart(2, "0")}</td>
+                          <tr
+                            key={s.id}
+                            className={
+                              s.id === selectedSupport ? "selected-leg-row" : ""
+                            }
+                            onClick={() => selectSupport(s.id)}
+                          >
+                            <td>
+                              <button
+                                className="text-button"
+                                aria-label={`Seleccionar pata ${i + 1}`}
+                                onClick={() => selectSupport(s.id)}
+                              >
+                                P-{String(i + 1).padStart(2, "0")}
+                                {s.moved ? " · manual" : ""}
+                              </button>
+                            </td>
                             <td>{s.row + 1}</td>
                             <td>
                               {s.x.toFixed(3)} / {s.z.toFixed(3)}
@@ -1168,12 +1339,15 @@ function App() {
                     </article>
                     <article>
                       <span>02 / REGLA ESPECIAL</span>
-                      <h4>Cama sencilla, sin riel norte-sur</h4>
+                      <h4>Riel norte–sur opcional</h4>
                       <p>
-                        Los tramos de una fila tienen cero rieles norte-sur. En
-                        tramos dobles se estiman líneas por separación de
-                        apoyos, multiplicadas por piezas comerciales necesarias
-                        para cubrir el fondo inclinado.
+                        En modo automático los tramos de una fila no llevan riel
+                        norte-sur. Puedes incluirlos o excluirlos desde
+                        Estructura. En tramos dobles se estiman líneas por
+                        separación de apoyos, multiplicadas por piezas
+                        comerciales necesarias para cubrir el fondo inclinado.
+                        Los Beam Clip automáticos dependen de sus cruces con los
+                        rieles este–oeste.
                       </p>
                     </article>
                     <article>

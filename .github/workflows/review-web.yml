@@ -7,6 +7,18 @@ on:
     paths:
       - .github/workflows/review-web.yml
       - scripts/publish-reviewed-site.ps1
+      - scripts/scan-with-defender.ps1
+      - src/**
+      - tests/**
+      - package.json
+      - package-lock.json
+      - index.html
+      - vite.config.ts
+      - tsconfig.json
+
+concurrency:
+  group: reviewed-web-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
