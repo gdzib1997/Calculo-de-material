@@ -1,3 +1,5 @@
+param([string]$WebBuild = "")
+
 $ErrorActionPreference = 'Stop'
 
 # Sólo analiza archivos. Nunca abre el HTML ni ejecuta el contenido del ZIP.
@@ -35,8 +37,13 @@ if ((Get-FileHash $sampleZip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $exp
     throw 'La huella del archivo cambió. No se continúa.'
 }
 
+if ($WebBuild) {
+    if (-not (Test-Path (Join-Path $WebBuild 'index.html'))) { throw 'Falta la compilación web; no se analiza ni entrega.' }
+    Copy-Item $WebBuild (Join-Path $sampleDirectory 'web') -Recurse
+}
+
 $evidence = @(Get-ChildItem $sampleDirectory -Recurse -File | Get-FileHash -Algorithm SHA256)
-if ($evidence.Count -ne 3) { throw 'No están los tres archivos esperados. No se declara aprobada la muestra.' }
+if ($evidence.Count -lt 3 -or ($WebBuild -and $evidence.Count -lt 4)) { throw 'Faltan archivos esperados. No se declara aprobada la muestra.' }
 
 $status = Get-MpComputerStatus
 if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled) {
@@ -76,6 +83,21 @@ foreach ($item in $evidence) {
         throw 'Un archivo fue retirado, puesto en cuarentena o modificado durante el análisis. No se declara aprobada la muestra.'
     }
 }
+
+$report = [ordered]@{
+    status = 'scan-completed-no-detection'
+    scannedAtUtc = [DateTime]::UtcNow.ToString('o')
+    workflowRun = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+    sourceCommit = $env:GITHUB_SHA
+    originalZipSha256 = $expectedHash
+    engineVersion = $status.AMEngineVersion
+    signatureVersion = $status.AntivirusSignatureVersion
+    signatureUpdatedUtc = $status.AntivirusSignatureLastUpdated.ToUniversalTime().ToString('o')
+    scannerExitCode = $scanExit
+    files = @($evidence | ForEach-Object { [ordered]@{ path = [System.IO.Path]::GetRelativePath($sampleDirectory, $_.Path); sha256 = $_.Hash.ToLowerInvariant() } })
+    limitation = 'Resultado limitado a estos archivos, motor y firmas. No garantiza ausencia de malware ni el mismo resultado en otros equipos. La alerta original del usuario no se considera un falso positivo confirmado.'
+}
+$report | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $env:RUNNER_TEMP 'defender-review.json') -Encoding utf8
 
 @"
 ## Resultado del análisis

@@ -45,3 +45,11 @@ Confirmar en el historial de protección el nombre del elemento afectado, si el 
 Se preparó `.github/workflows/defender-review.yml`, ejecutable en GitHub Actions con Windows 2022. El script recupera la muestra exacta del historial, comprueba su SHA-256, extrae únicamente los nombres esperados y analiza tanto ZIP como HTML con Defender, sin ejecutarlos. Actualiza las firmas y exige que el servicio esté activo. Cualquier hallazgo o error bloquea el análisis; no hay publicación ni despliegue automático, incluso si el análisis finaliza sin detecciones.
 
 Este flujo necesita que GitHub acepte y ejecute el workflow y que el runner tenga Defender operativo. **Preparar o subir el flujo no significa que el análisis haya pasado.** El resultado debe verificarse en Actions y conservar su motor, versión de firmas, huella y fecha.
+
+## Resultado inicial y preparación de versión web
+
+La ejecución [40371486311](https://github.com/gdzib1997/Calculo-de-material/actions/runs/40371486311) terminó con estado **Success**. El flujo exige Defender activo, actualización de firmas, código cero y conservación de todos los archivos analizados. Se limita a esa ejecución; **no confirma que la alerta del equipo del usuario fuera un falso positivo**.
+
+Se añadió un flujo separado `review-web.yml` para instalar con lockfile y sin scripts de instalación, ejecutar pruebas, compilar el sitio convencional con recursos separados y analizar también esos archivos en Windows. Sólo después de completar el escaneo permite preparar una rama nueva `gh-pages`, sin sobrescribir referencias existentes, incluyendo un informe JSON de Defender y verificando que los archivos publicados coincidan con sus huellas analizadas. La descarga original permanece retirada.
+
+Subir el flujo no significa que haya pasado ni que GitHub Pages esté activo. La rama, el informe y el estado de ejecución deben verificarse antes de ofrecer la versión web. Los avisos moderados de dependencias siguen documentados; un escaneo no es una garantía absoluta de seguridad.

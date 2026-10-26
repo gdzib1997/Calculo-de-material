@@ -1,0 +1,38 @@
+name: Compilar y revisar versión web con Defender
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/review-web.yml
+      - scripts/publish-reviewed-site.ps1
+
+permissions:
+  contents: write
+
+jobs:
+  reviewed-web:
+    name: Compilar, analizar y preparar rama del sitio
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - name: Obtener código e historial
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Instalar dependencias verificando el lockfile y sin scripts de instalación
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Comprobar cálculo
+        run: npm test
+      - name: Compilar sitio con recursos separados
+        run: npm run build -- --base /Calculo-de-material/
+      - name: Analizar muestra original y compilación web sin ejecutarlas
+        shell: pwsh
+        run: ./scripts/scan-with-defender.ps1 -WebBuild dist
+      - name: Preparar rama web sólo si el análisis finalizó correctamente
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-reviewed-site.ps1

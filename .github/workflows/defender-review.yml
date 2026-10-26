@@ -2,11 +2,6 @@ name: Revisar descarga con Microsoft Defender
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/defender-review.yml
-      - scripts/scan-with-defender.ps1
 
 permissions:
   contents: read
