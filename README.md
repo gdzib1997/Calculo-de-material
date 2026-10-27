@@ -2,6 +2,16 @@
 
 Aplicación web en español para estimar materiales de camas fotovoltaicas, editar su distribución y verlas en 3D. Primera versión funcional, con tabla del usuario como referencia; **los manuales oficiales Unirac Ascender aún no se han validado**.
 
+## Instalar en PC con Windows
+
+1. Abre [Unirack Studio](https://gdzib1997.github.io/Calculo-de-material/) en **Microsoft Edge o Google Chrome**.
+2. Espera **Listo para usar sin conexión** y pulsa **Instalar en PC**. También puedes usar el icono de instalación junto a la dirección del navegador.
+3. Ábrelo desde Inicio o su acceso directo. Funciona en su propia ventana y, tras esa primera carga, permite calcular, editar el 3D y exportar PDF, Word y Excel sin internet.
+
+Usa el mismo navegador/perfil para conservar los proyectos que ya tenías. Para cambiarlos de navegador o equipo, utiliza **Guardar proyecto** (JSON) y **Abrir**. La instalación es una aplicación web instalable; no requiere un `.exe`, Node ni Python en el equipo. El ZIP antiguo sigue retirado.
+
+Las actualizaciones se descargan cuando hay conexión. **Actualizar aplicación** las aplica sólo cuando lo eliges; termina de guardar y exportar tus vistas antes de hacerlo. Una descarga incompleta conserva la copia offline anterior. Las otras ventanas abiertas mantienen los recursos que aún utilizan. El instalador del navegador puede ofrecer anclar el acceso a la barra de tareas.
+
 ## Descarga suspendida por alerta de antivirus
 
 El usuario reportó una alerta de troyano sobre la primera versión empaquetada. Se retiró el ZIP de la versión actual del repositorio mientras se investiga. **No abras el archivo descargado, no permitas su ejecución y no desactives el antivirus.** Usa la cuarentena o eliminación ofrecida por tu antivirus.

@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "Unirack Studio",
+  "short_name": "Unirack",
+  "description": "Calcula materiales, edita estructuras fotovoltaicas y exporta tus proyectos.",
+  "lang": "es-MX",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#edf0e9",
+  "theme_color": "#142c28",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

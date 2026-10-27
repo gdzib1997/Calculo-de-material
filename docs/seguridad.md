@@ -77,3 +77,9 @@ La ejecución [40383237858](https://github.com/gdzib1997/Calculo-de-material/act
 El commit de publicación `6827c50faf81f5c7800f2f95679bca6715846ab7` conserva el mismo árbol de archivos analizados. GitHub confirmó el despliegue en [40384204172](https://github.com/gdzib1997/Calculo-de-material/actions/runs/40384204172). Pages ya estaba activado por el propietario; no necesita volver a activarse. La comprobación de despliegue se basó en GitHub, porque la política de red de esta máquina bloquea el acceso directo al dominio github.io.
 
 Estas comprobaciones no convierten el análisis de malware en una garantía absoluta ni validan el diseño estructural. El ZIP original continúa retirado.
+
+## Instalación en PC desde el navegador
+
+La BETA 05 permite instalar la aplicación web en Windows desde Edge/Chrome con ventana propia y uso sin conexión. No se redistribuye el ZIP retirado ni se crea un ejecutable sustituto. Los recursos offline forman parte del mismo build analizado; el worker comprueba su SHA-256 antes de completar la instalación, y una actualización incompleta conserva la copia anterior.
+
+El flujo verifica las exportaciones offline y las actualizaciones usando Chrome en Windows. Además de comparar archivos antes de publicar, desactiva la conversión automática de finales de línea en el repositorio generado y comprueba los bytes del índice Git contra el informe de Defender; cualquier diferencia impide publicar. Así el inventario offline corresponde exactamente a los archivos entregados. Estas medidas y los resultados de cada ejecución no constituyen una garantía universal frente a todas las detecciones de antivirus.

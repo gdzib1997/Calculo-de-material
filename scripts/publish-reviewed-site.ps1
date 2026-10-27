@@ -28,6 +28,8 @@ foreach ($item in $webFiles) {
 if ($LASTEXITCODE -ne 0) { throw 'No se pudo configurar la autenticación del runner.' }
 & git -C $destination init --initial-branch=gh-pages
 if ($LASTEXITCODE -ne 0) { throw 'No se pudo inicializar la rama del sitio.' }
+& git -C $destination config core.autocrlf false
+if ($LASTEXITCODE -ne 0) { throw 'No se pudo preservar la representación binaria del build.' }
 & git -C $destination config user.name 'github-actions[bot]'
 & git -C $destination config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 & git -C $destination remote add origin "https://github.com/$env:GITHUB_REPOSITORY.git"
@@ -62,6 +64,26 @@ for name in git('ls-tree','-r','--name-only','FETCH_HEAD').decode().splitlines()
     throw 'No se pudo comprobar la existencia de la rama. No se sobrescribe.'
 }
 & git -C $destination add -A
+if ($LASTEXITCODE -ne 0) { throw 'No se pudieron preparar los archivos analizados.' }
+$env:UNIRACK_STAGED_DESTINATION = $destination
+$env:UNIRACK_STAGED_REPORT = $reportPath
+@'
+import hashlib, json, os, subprocess
+root=os.environ['UNIRACK_STAGED_DESTINATION']
+with open(os.environ['UNIRACK_STAGED_REPORT'],encoding='utf-8-sig') as stream:
+    report=json.load(stream)
+verified=0
+for item in report['files']:
+    name=item['path'].replace(chr(92),'/')
+    if not name.startswith('web/'): continue
+    data=subprocess.check_output(['git','-C',root,'show',':'+name[4:]])
+    if hashlib.sha256(data).hexdigest()!=item['sha256']:
+        raise SystemExit('Git modificó un archivo después del análisis. Se cancela la publicación: '+name)
+    verified+=1
+if verified<2: raise SystemExit('No se encontraron suficientes archivos web analizados.')
+print('Los archivos del índice Git conservan exactamente las huellas analizadas:',verified)
+'@ | python -
+if ($LASTEXITCODE -ne 0) { throw 'La versión preparada difiere de los archivos analizados.' }
 & git -C $destination commit -m "Publicar compilación web analizada con Defender ($env:GITHUB_SHA)"
 if ($LASTEXITCODE -ne 0) { throw 'No se pudo guardar la compilación analizada.' }
 & git -C $destination push origin HEAD:refs/heads/gh-pages

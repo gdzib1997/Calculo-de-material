@@ -52,6 +52,7 @@ import {
 import type { Bed, MaterialId, Project, PanelPreset } from "./lib/model";
 import { download, loadProject, safeName, saveProject } from "./lib/storage";
 import Field from "./components/Field";
+import DesktopInstall from "./components/DesktopInstall";
 import PdfDialog from "./components/PdfDialog";
 import { capturePdfView } from "./lib/pdf-views";
 import type { PdfView } from "./lib/pdf-views";
@@ -523,6 +524,17 @@ function App() {
           </div>
         </div>
       </div>
+      {import.meta.env.PROD && (
+        <DesktopInstall
+          canUpdate={
+            saveState &&
+            !busy &&
+            !pdfOpen &&
+            !importName &&
+            savedViews.length === 0
+          }
+        />
+      )}
       <main className="main">
         <div className="page-title">
           <div>

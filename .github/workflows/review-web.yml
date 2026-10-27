@@ -9,11 +9,16 @@ on:
       - scripts/publish-reviewed-site.ps1
       - scripts/scan-with-defender.ps1
       - src/**
+      - public/**
+      - scripts/offline-build.ts
+      - scripts/offline-worker.js
       - tests/**
       - package.json
       - package-lock.json
       - index.html
       - vite.config.ts
+      - playwright.config.ts
+      - playwright.desktop.config.ts
       - tsconfig.json
 
 concurrency:
@@ -40,6 +45,10 @@ jobs:
         run: npm test
       - name: Compilar sitio con recursos separados
         run: npm run build -- --base /Calculo-de-material/
+      - name: Comprobar uso en PC y exportaciones sin conexión
+        env:
+          CHROMIUM_PATH: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        run: npx playwright test --config playwright.desktop.config.ts
       - name: Analizar muestra original y compilación web sin ejecutarlas
         shell: pwsh
         run: ./scripts/scan-with-defender.ps1 -WebBuild dist
