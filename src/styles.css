@@ -2770,3 +2770,30 @@ select {
   max-height: 70px;
   object-fit: contain;
 }
+
+.rail-editor {
+  padding: 18px;
+}
+.rail-editor .field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 12px;
+}
+.rail-editor input:not([type="checkbox"]) {
+  max-width: 100%;
+  padding: 9px;
+  border: 1px solid #d5ded7;
+  border-radius: 5px;
+}
+.rail-editor form {
+  margin-top: 16px;
+}
+.rail-mount-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 12px;
+  color: #536d58;
+}

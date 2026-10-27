@@ -505,3 +505,235 @@ test("las cotas sobreviven cambios repetidos de cuadrícula y selección en 3D",
     .screenshot({ path: "/tmp/unirack-v04-dimensions.png" });
   expect(errors).toEqual([]);
 });
+
+test("añade y elimina riel E–O con patas y contravientos, y recupera el conjunto", async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await expect(page.locator("canvas")).toBeVisible({ timeout: 15000 });
+  await page.getByRole("button", { name: "Rieles", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Eliminar riel seleccionado", exact: true })
+    .click();
+  await page.getByRole("button", { name: /^Materiales/ }).click();
+  await expect(
+    page.getByRole("spinbutton", {
+      name: "Cantidad Riel (total)",
+      exact: true,
+    }),
+  ).toHaveValue("18");
+  await expect(
+    page.getByRole("spinbutton", { name: "Cantidad L-Foot", exact: true }),
+  ).toHaveValue("18");
+  await page.getByRole("button", { name: "Rieles", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Reponer riel seleccionado", exact: true })
+    .click();
+  const create = page.locator(".rail-editor form").last();
+  await create
+    .getByRole("button", { name: "Añadir riel a la cama", exact: true })
+    .click();
+  await expect(
+    page.getByRole("combobox", { name: "Riel seleccionado", exact: true }),
+  ).toHaveValue(/^manual-rail:/);
+  await page
+    .getByRole("button", { name: "Eliminar riel seleccionado", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Nombre del nuevo riel", exact: true })
+    .fill("Riel E-O extra");
+  await create
+    .getByRole("spinbutton", { name: "Inicio E–O del riel", exact: true })
+    .fill("-3");
+  await create
+    .getByRole("spinbutton", { name: "Final E–O del riel", exact: true })
+    .fill("3");
+  await create
+    .getByRole("spinbutton", { name: "Posición N–S del riel", exact: true })
+    .fill("1");
+  await create
+    .getByRole("button", { name: "Añadir riel a la cama", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("combobox", { name: "Riel seleccionado", exact: true })
+      .locator("option:checked"),
+  ).toHaveText("Riel E-O extra");
+  const id = await page
+    .getByRole("combobox", { name: "Riel seleccionado", exact: true })
+    .inputValue();
+  expect(id).toMatch(/^manual-rail:/);
+  await page
+    .getByRole("button", { name: "Patas y bases", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Riel para añadir pata", exact: true })
+    .selectOption(id);
+  await page
+    .getByRole("button", { name: "Añadir pata al riel", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Añadir pata al riel", exact: true })
+    .click();
+  await expect(
+    page.getByText("Guardado localmente", { exact: true }),
+  ).toBeVisible();
+  const ids = await page.evaluate(() =>
+    JSON.parse(
+      localStorage.getItem("unirack-studio-project-v1")!,
+    ).beds[0].extraSupports.map((s: { id: string }) => s.id),
+  );
+  await page
+    .getByRole("button", { name: "Contravientos", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", {
+      name: "Pata de origen del contraviento",
+      exact: true,
+    })
+    .selectOption(ids[0]);
+  await page
+    .getByRole("combobox", {
+      name: "Pata de destino del contraviento",
+      exact: true,
+    })
+    .selectOption(ids[1]);
+  await page
+    .getByRole("button", { name: "Agregar contraviento", exact: true })
+    .click();
+  await page.getByRole("button", { name: /^Materiales/ }).click();
+  await expect(
+    page.getByRole("spinbutton", { name: "Cantidad T-Bolt", exact: true }),
+  ).toHaveValue("82");
+  await page.getByRole("button", { name: "Rieles", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Eliminar riel seleccionado", exact: true })
+    .click();
+  await page.getByRole("button", { name: /^Materiales/ }).click();
+  await expect(
+    page.getByRole("spinbutton", {
+      name: "Cantidad Riel (total)",
+      exact: true,
+    }),
+  ).toHaveValue("20");
+  await expect(
+    page.getByRole("spinbutton", { name: "Cantidad T-Bolt", exact: true }),
+  ).toHaveValue("72");
+  await page.getByRole("button", { name: "Rieles", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Reponer riel seleccionado", exact: true })
+    .click();
+  await expect(
+    page.getByText("Guardado localmente", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: /^Materiales/ }).click();
+  await expect(
+    page.getByRole("spinbutton", { name: "Cantidad T-Bolt", exact: true }),
+  ).toHaveValue("82");
+  await page
+    .getByRole("button", { name: "Contravientos", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Eliminar contraviento", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Patas y bases", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Pata seleccionada", exact: true })
+    .selectOption(ids[0]);
+  await page
+    .getByRole("button", { name: "Quitar pata seleccionada", exact: true })
+    .click();
+  await page.getByRole("button", { name: /^Materiales/ }).click();
+  await expect(
+    page.getByRole("spinbutton", { name: "Cantidad T-Bolt", exact: true }),
+  ).toHaveValue("75");
+  expect(errors).toEqual([]);
+});
+
+test("añade, edita y retira N–S y exporta únicamente sus cortes activos", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("canvas")).toBeVisible({ timeout: 15000 });
+  await page.getByRole("button", { name: "Rieles", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Sentido del nuevo riel", exact: true })
+    .selectOption("z");
+  const create = page.locator(".rail-editor form").last();
+  await page
+    .getByRole("textbox", { name: "Nombre del nuevo riel", exact: true })
+    .fill("N-S manual");
+  await create
+    .getByRole("spinbutton", { name: "Inicio N–S del riel", exact: true })
+    .fill("-2");
+  await create
+    .getByRole("spinbutton", { name: "Final N–S del riel", exact: true })
+    .fill("2");
+  await create
+    .getByRole("spinbutton", { name: "Posición E–O del riel", exact: true })
+    .fill("0");
+  await create
+    .getByRole("button", { name: "Añadir riel a la cama", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("combobox", { name: "Riel seleccionado", exact: true })
+      .locator("option:checked"),
+  ).toHaveText("N-S manual");
+  const id = await page
+    .getByRole("combobox", { name: "Riel seleccionado", exact: true })
+    .inputValue();
+  const edit = page.locator(".rail-editor form").first();
+  await edit
+    .getByRole("spinbutton", { name: "Inicio N–S del riel", exact: true })
+    .fill("-5");
+  await edit
+    .getByRole("button", { name: "Aplicar medidas del riel", exact: true })
+    .click();
+  await page.getByRole("button", { name: /^Materiales/ }).click();
+  await expect(
+    page.getByRole("spinbutton", {
+      name: "Cantidad Riel (total)",
+      exact: true,
+    }),
+  ).toHaveValue("22");
+  await page.getByRole("button", { name: "Rieles", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Eliminar riel seleccionado", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Exportar", exact: true }).click();
+  const pending = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Libro de Excel/ }).click();
+  const dl = await pending;
+  const file = "/tmp/unirack-v05-rails.xlsx";
+  await dl.saveAs(file);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(file);
+  expect(workbook.getWorksheet("Materiales")!.getCell("B6").value).toBe(20);
+  expect(workbook.getWorksheet("Perfiles")!.getColumn(2).values).not.toContain(
+    id,
+  );
+  await page
+    .getByRole("button", { name: "Reponer riel seleccionado", exact: true })
+    .click();
+  await expect(
+    page.getByText("Guardado localmente", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Rieles", exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Riel seleccionado", exact: true })
+    .selectOption(id);
+  await expect(
+    page
+      .locator(".rail-editor form")
+      .first()
+      .getByRole("spinbutton", { name: "Inicio N–S del riel", exact: true }),
+  ).toHaveValue("-5");
+});

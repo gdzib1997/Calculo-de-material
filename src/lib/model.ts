@@ -62,6 +62,17 @@ export interface SupportPosition {
   bottomHardware?: LegHardware;
   topHardware?: LegHardware;
 }
+export interface RailGeometry {
+  axis: "x" | "z";
+  start: number;
+  end: number;
+  fixed: number;
+  panelMount?: boolean;
+}
+export interface ManualRail extends RailGeometry {
+  id: string;
+  name: string;
+}
 export interface Bed {
   id: string;
   name: string;
@@ -92,6 +103,9 @@ export interface Bed {
   supportOverrides?: Record<string, SupportPosition>;
   supportGrid?: { eastWest: number; northSouth: number };
   removedSupports?: string[];
+  manualRails?: ManualRail[];
+  removedRails?: string[];
+  railOverrides?: Record<string, RailGeometry>;
   extraSupports?: { id: string; trackId: string; x: number; z: number }[];
   panelRotations?: Record<string, number>;
   bases: boolean;
@@ -335,12 +349,27 @@ export function projectBounds(project: Project) {
     const d = dimensions(b),
       p = bedPose(project, i),
       a = (p.rotation * Math.PI) / 180;
-    return [d.minX, d.maxX].flatMap((x) =>
-      [d.backZ, d.frontZ].map((z) => ({
-        x: p.x + x * Math.cos(a) - z * Math.sin(a),
-        z: p.z + x * Math.sin(a) + z * Math.cos(a),
-      })),
+    const local = [d.minX, d.maxX].flatMap((x) =>
+      [d.backZ, d.frontZ].map((z) => ({ x, z })),
     );
+    for (const t of supportTracks(b).filter(
+      (t) => t.manual || b.railOverrides?.[t.id],
+    )) {
+      const extra =
+        t.axis === "x"
+          ? b.overhang
+          : t.panelMount
+            ? b.overhang * Math.cos(d.rad)
+            : 0;
+      for (const along of [t.start - extra, t.end + extra])
+        local.push(
+          t.axis === "x" ? { x: along, z: t.fixed } : { x: t.fixed, z: along },
+        );
+    }
+    return local.map(({ x, z }) => ({
+      x: p.x + x * Math.cos(a) - z * Math.sin(a),
+      z: p.z + x * Math.sin(a) + z * Math.cos(a),
+    }));
   });
   const minX = Math.min(...points.map((p) => p.x)),
     maxX = Math.max(...points.map((p) => p.x)),
@@ -496,8 +525,9 @@ export interface SupportTrack {
   name: string;
   panelMount?: boolean;
   gridIndex?: number;
+  manual?: boolean;
 }
-export function supportTracks(b: Bed): SupportTrack[] {
+function automaticTracks(b: Bed): SupportTrack[] {
   const d = dimensions(b),
     tracks: SupportTrack[] = [];
   for (let r = 0; r < b.rows && b.ewMode !== "exclude"; r++) {
@@ -678,6 +708,50 @@ export function supportTracks(b: Bed): SupportTrack[] {
   }
   return tracks;
 }
+export function railCatalog(b: Bed): SupportTrack[] {
+  const manual: SupportTrack[] = (b.manualRails ?? [])
+    .filter((t) => (t.axis === "x" ? b.ewMode : b.nsMode) !== "exclude")
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      axis: t.axis,
+      start: t.start,
+      end: t.end,
+      fixed: t.fixed,
+      panelMount: t.panelMount,
+      manual: true,
+    }));
+  return [...automaticTracks(b), ...manual].map((t) => {
+    const v = b.railOverrides?.[t.id];
+    return v
+      ? {
+          ...t,
+          start: v.start,
+          end: v.end,
+          fixed: v.fixed,
+          panelMount: v.panelMount,
+        }
+      : t;
+  });
+}
+export function supportTracks(b: Bed): SupportTrack[] {
+  return railCatalog(b).filter((t) => !b.removedRails?.includes(t.id));
+}
+export function validRailGeometry(b: Bed, t: RailGeometry): boolean {
+  if (
+    !t ||
+    !["x", "z"].includes(t.axis) ||
+    ![t.start, t.end, t.fixed].every(
+      (n) => Number.isFinite(n) && Math.abs(n) <= 200,
+    ) ||
+    t.end - t.start < 0.05 - 1e-8 ||
+    (t.panelMount !== undefined && typeof t.panelMount !== "boolean")
+  )
+    return false;
+  const d = dimensions(b),
+    front = t.axis === "x" ? t.fixed : t.end;
+  return b.frontHeight + (d.frontZ - front) * Math.tan(d.rad) >= 0.05 - 1e-8;
+}
 export function panelIsHorizontal(b: Bed, r: number, c: number) {
   const a = (panelRotation(b, r, c) * Math.PI) / 180,
     w = b.orientation === "portrait" ? b.panelWidth : b.panelLength,
@@ -804,9 +878,11 @@ export function supports(b: Bed): Support[] {
   const d = dimensions(b),
     tracks = supportTracks(b),
     result: Support[] = [];
+  const allRails = railCatalog(b),
+    catalog = allRails.filter((t) => !t.manual);
   const rails = b.supportGrid
-    ? tracks.filter((t) => t.gridIndex !== undefined)
-    : tracks.filter((t) => t.axis === (b.ewMode === "exclude" ? "z" : "x"));
+    ? catalog.filter((t) => t.gridIndex !== undefined)
+    : catalog.filter((t) => t.axis === (b.ewMode === "exclude" ? "z" : "x"));
   const append = (
     rail: SupportTrack,
     id: string,
@@ -816,8 +892,9 @@ export function supports(b: Bed): Support[] {
   ) => {
     if (b.removedSupports?.includes(id)) return;
     const manual = b.supportOverrides?.[id],
-      track = tracks.find((t) => t.id === manual?.trackId) || rail,
-      x =
+      track = tracks.find((t) => t.id === (manual?.trackId ?? rail.id));
+    if (!track) return;
+    const x =
         track.axis === "x"
           ? Math.max(track.start, Math.min(track.end, manual?.x ?? autoX))
           : track.fixed,
@@ -880,7 +957,9 @@ export function supports(b: Bed): Support[] {
     }
   }
   for (const extra of b.extraSupports ?? []) {
-    const rail = tracks.find((t) => t.id === extra.trackId);
+    const rail =
+      allRails.find((t) => t.id === extra.trackId) ??
+      tracks.find((t) => t.id === b.supportOverrides?.[extra.id]?.trackId);
     if (rail) append(rail, extra.id, extra.x, extra.z, result.length);
   }
   // Preserva el orden histórico: fila, tramo, estación y línea.
@@ -1275,6 +1354,12 @@ export function validateProject(input: unknown): Project {
     )
       throw new Error("Datos de cama inválidos.");
     ids.add(b.id);
+    for (const [key, [min, max]] of Object.entries(ranges)) {
+      const n = b[key as keyof Bed];
+      if (typeof n !== "number" || !Number.isFinite(n) || n < min || n > max)
+        throw new Error(`Valor inválido: ${key}`);
+    }
+
     if (
       b.position &&
       (!Number.isFinite(b.position.x) ||
@@ -1306,6 +1391,39 @@ export function validateProject(input: unknown): Project {
         ))
     )
       throw new Error("Contravientos inválidos.");
+    if (
+      b.manualRails !== undefined &&
+      (!Array.isArray(b.manualRails) ||
+        b.manualRails.length > 200 ||
+        new Set(b.manualRails.map((t) => t?.id)).size !==
+          b.manualRails.length ||
+        b.manualRails.some(
+          (t) =>
+            !t ||
+            typeof t.id !== "string" ||
+            !t.id.startsWith("manual-rail:") ||
+            typeof t.name !== "string" ||
+            t.name.length > 100 ||
+            !validRailGeometry(b, t),
+        ))
+    )
+      throw new Error("Rieles manuales inválidos.");
+    if (
+      b.removedRails !== undefined &&
+      (!Array.isArray(b.removedRails) ||
+        b.removedRails.length > 1000 ||
+        b.removedRails.some((id) => typeof id !== "string"))
+    )
+      throw new Error("Rieles retirados inválidos.");
+    if (
+      b.railOverrides !== undefined &&
+      (!b.railOverrides ||
+        typeof b.railOverrides !== "object" ||
+        Array.isArray(b.railOverrides) ||
+        Object.keys(b.railOverrides).length > 1000 ||
+        Object.values(b.railOverrides).some((t) => !validRailGeometry(b, t)))
+    )
+      throw new Error("Ajustes de rieles inválidos.");
     if (
       b.supportGrid &&
       (!Number.isInteger(b.supportGrid.eastWest) ||
@@ -1394,12 +1512,14 @@ export function validateProject(input: unknown): Project {
         Array.isArray(b.supportOverrides) ||
         Object.entries(b.supportOverrides).some(
           ([key, v]) =>
-            !/^r\d+:c\d+:s\d+:n[01]$/.test(key) ||
+            !/^(?:r\d+:c\d+:s\d+:n[01]|grid:[xz]:\d+:\d+|extra:[\w-]+|(?:ns|mount:ns):[\w:-]+:s\d+)$/.test(
+              key,
+            ) ||
             !v ||
             !Number.isFinite(v.x) ||
             !Number.isFinite(v.z) ||
-            Math.abs(v.x) > 100 ||
-            Math.abs(v.z) > 100 ||
+            Math.abs(v.x) > 200 ||
+            Math.abs(v.z) > 200 ||
             (v.trackId !== undefined && typeof v.trackId !== "string") ||
             (v.bottomHardware !== undefined &&
               !["lFoot", "tiltPlate", "none"].includes(v.bottomHardware)) ||
@@ -1408,11 +1528,6 @@ export function validateProject(input: unknown): Project {
         ))
     )
       throw new Error("Posiciones de patas inválidas.");
-    for (const [key, [min, max]] of Object.entries(ranges)) {
-      const n = b[key as keyof Bed];
-      if (typeof n !== "number" || !Number.isFinite(n) || n < min || n > max)
-        throw new Error(`Valor inválido: ${key}`);
-    }
     if (
       !Number.isInteger(b.rows) ||
       !Number.isInteger(b.columns) ||
@@ -1437,6 +1552,13 @@ export function validateProject(input: unknown): Project {
       )
     )
       throw new Error("Cantidades manuales inválidas.");
+    if (
+      b.railOverrides &&
+      [...automaticTracks(b), ...(b.manualRails ?? [])].some(
+        (t) => b.railOverrides?.[t.id] && b.railOverrides[t.id].axis !== t.axis,
+      )
+    )
+      throw new Error("No puede cambiarse el eje de un riel existente.");
   }
   p.beds = p.beds.map((b, i) => ({
     ...b,

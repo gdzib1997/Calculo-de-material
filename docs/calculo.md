@@ -65,3 +65,11 @@ Retirar una pata conserva su ID en el proyecto para poder reponerla. Una pata a�
 ## PDF sencillo
 
 El PDF contiene sólo nombre del proyecto, cliente, ubicación, logo o texto SOLEON naranja, tabla Material/Cantidad/Unidad y las vistas seleccionadas. No añade informes de patas, camas, reglas ni techo. Las capturas se guardan durante la sesión (hasta ocho) con la cámara actual; la ventana de exportación permite elegirlas y también ofrece la vista actual. El logo raster original y la ubicación se guardan en el JSON. El PDF respeta la proporción de imágenes y puede generarse sin vistas. Las cotas se dibujan con texturas sobre sprites dentro del canvas, sin insertar nodos HTML, y se incluyen en las capturas. Word y Excel mantienen el detalle técnico.
+
+## Rieles individuales y dependencias
+
+Cada cama admite rieles manuales y ajustes de geometría por ID, además de una lista de rieles retirados. El catálogo conserva los rieles retirados; el conjunto activo los excluye, y ese conjunto alimenta dibujo, clamps, cruces, cortes y exportaciones. Los controles por sentido también se aplican a los manuales. Los extremos son coordenadas horizontales locales; las piezas N–S usan su longitud inclinada. Las geometrías deben tener al menos 5 cm de intervalo, coordenadas finitas entre −200 y 200 m y altura mínima de 5 cm sobre el plano de bases. Se admiten hasta 200 rieles manuales.
+
+Los apoyos automáticos mantienen su riel de origen para conservar IDs. Una asignación manual de riel tiene precedencia: si ese destino no está activo, el apoyo se suspende, sin sustituirlo por otro. Eliminar el origen no elimina una pata que ya fue movida a un destino activo. Las patas extras guardan la relación directa con su riel. Los contravientos cuentan únicamente cuando ambas patas siguen disponibles y alineadas. No se redistribuyen los apoyos supervivientes al retirar un riel de cuadrícula. Añadir rieles manuales no crea patas automáticas.
+
+La lista de rieles retirados es reversible y no borra las patas ni uniones almacenadas. Los ajustes finales de material siguen teniendo precedencia sobre los cálculos. Guardar y reabrir conserva también las posiciones de patas de cuadrícula, extras y N–S. Encuadrar transforma los extremos activos editados o manuales junto con cada cama para incluirlos en la vista.

@@ -20,6 +20,8 @@ import {
   projectBounds,
   validateProject,
   panelClamps,
+  railCatalog,
+  memberCuts,
 } from "../src/lib/model";
 import type { Bed, MaterialId, RoofImage } from "../src/lib/model";
 const quantity = (b: Bed, id: MaterialId) =>
@@ -655,4 +657,274 @@ describe("Sujeción sobre bordes reales del panel", () => {
       );
     }
   });
+});
+
+describe("Rieles manuales y eliminación individual", () => {
+  it("retirar un E–O elimina sólo sus patas, clamps, cruces y cortes", () => {
+    const b = createBed(),
+      before = supports(b),
+      rail = supportTracks(b).find((t) => t.axis === "x")!;
+    b.removedRails = [rail.id];
+    expect(railBreakdown(b).eastWest).toBe(6);
+    expect(quantity(b, "rail")).toBe(18);
+    expect(quantity(b, "beamClip")).toBe(18);
+    expect(quantity(b, "midClamp")).toBe(15);
+    expect(quantity(b, "endClamp")).toBe(6);
+    expect(supports(b)).toEqual(before.filter((s) => s.trackId !== rail.id));
+    expect(quantity(b, "tBolt")).toBe(54);
+    expect(memberCuts(b).some((c) => c.id === rail.id)).toBe(false);
+    b.removedRails = [];
+    expect(supports(b)).toEqual(before);
+    expect(quantity(b, "rail")).toBe(20);
+  });
+  it("retirar N–S conserva las patas E–O y descuenta clips", () => {
+    const b = createBed(),
+      before = supports(b),
+      rail = supportTracks(b).find((t) => t.axis === "z")!;
+    b.removedRails = [rail.id];
+    expect(supports(b)).toEqual(before);
+    expect(quantity(b, "rail")).toBe(18);
+    expect(quantity(b, "beamClip")).toBe(20);
+    expect(quantity(b, "midClamp")).toBe(20);
+  });
+  it("quitar un riel de cuadrícula no lo regenera ni redistribuye las otras patas", () => {
+    const b: Bed = {
+        ...createBed(),
+        supportGrid: { eastWest: 4, northSouth: 2 },
+      },
+      before = supports(b),
+      rail = supportTracks(b).find((t) => t.gridIndex === 0)!;
+    b.removedRails = [rail.id];
+    expect(supports(b)).toEqual(before.filter((s) => s.trackId !== rail.id));
+    expect(supports(b)).toHaveLength(4);
+    expect(railCatalog(b).some((t) => t.id === rail.id)).toBe(true);
+    expect(supportTracks(b).some((t) => t.id === rail.id)).toBe(false);
+    b.removedRails = [];
+    expect(supports(b)).toEqual(before);
+  });
+  it("una pata movida a otro riel depende del riel de destino, sin regresar de forma implícita", () => {
+    const b = createBed(),
+      leg = supports(b)[0],
+      source = leg.trackId,
+      target = supportTracks(b).find((t) => t.axis === "z")!;
+    b.supportOverrides = {
+      [leg.id]: snapSupport(b, leg.id, target.fixed, leg.z, target.id),
+    };
+    b.removedRails = [source];
+    expect(supports(b).some((s) => s.id === leg.id)).toBe(true);
+    b.removedRails = [target.id];
+    expect(supports(b).some((s) => s.id === leg.id)).toBe(false);
+    b.removedRails = [];
+    expect(supports(b).find((s) => s.id === leg.id)!.trackId).toBe(target.id);
+    b.extraSupports = [
+      { id: "extra:moved", trackId: source, x: leg.x, z: leg.z },
+    ];
+    b.supportOverrides["extra:moved"] = snapSupport(
+      b,
+      "extra:moved",
+      target.fixed,
+      leg.z,
+      target.id,
+    );
+    b.removedRails = [source];
+    expect(supports(b).find((s) => s.id === "extra:moved")!.trackId).toBe(
+      target.id,
+    );
+    b.removedRails = [target.id];
+    expect(supports(b).some((s) => s.id === "extra:moved")).toBe(false);
+  });
+  it("añadir riel E–O cuenta su corte y clamps sin generar patas implícitas", () => {
+    const b = createBed(),
+      d = dimensions(b),
+      before = supports(b);
+    b.manualRails = [
+      {
+        id: "manual-rail:test",
+        name: "Adicional E–O",
+        axis: "x",
+        start: d.minX,
+        end: d.maxX,
+        fixed: d.frontZ - d.rowCenters[0] * Math.cos(d.rad),
+        panelMount: true,
+      },
+    ];
+    expect(quantity(b, "rail")).toBe(22);
+    expect(quantity(b, "midClamp")).toBe(25);
+    expect(quantity(b, "endClamp")).toBe(10);
+    expect(supports(b)).toEqual(before);
+    expect(memberCuts(b).find((c) => c.id === "manual-rail:test")!.pieces).toBe(
+      2,
+    );
+  });
+  it("patas y contravientos sobre un riel manual se retiran y recuperan juntos", () => {
+    const b = createBed(),
+      d = dimensions(b),
+      id = "manual-rail:braced",
+      z = d.frontZ - d.rowCenters[0] * Math.cos(d.rad);
+    b.manualRails = [
+      { id, name: "Riel con patas", axis: "x", start: -3, end: 3, fixed: z },
+    ];
+    b.extraSupports = [
+      { id: "extra:a", trackId: id, x: -2, z },
+      { id: "extra:b", trackId: id, x: 2, z },
+    ];
+    b.manualBraces = [
+      { id: "diagonal", fromId: "extra:a", toId: "extra:b", axis: "ew" },
+    ];
+    const before = calculate(b);
+    expect(quantity(b, "tBolt")).toBe(82);
+    expect(braces(b)).toHaveLength(1);
+    b.removedRails = [id];
+    expect(supports(b)).toHaveLength(24);
+    expect(braces(b)).toHaveLength(0);
+    expect(quantity(b, "tBolt")).toBe(72);
+    expect(quantity(b, "rail")).toBe(20);
+    b.removedRails = [];
+    expect(calculate(b)).toEqual(before);
+  });
+  it("dos rieles N–S manuales sujetan un panel horizontal, sin E–O", () => {
+    const b: Bed = {
+        ...createBed(),
+        rows: 1,
+        columns: 1,
+        orientation: "landscape",
+        ewMode: "exclude",
+      },
+      d = dimensions(b);
+    b.removedRails = supportTracks(b).map((t) => t.id);
+    b.manualRails = [-1, 1].map((side, i) => ({
+      id: `manual-rail:${i}`,
+      name: `N–S ${i}`,
+      axis: "z",
+      start: d.backZ,
+      end: d.frontZ,
+      fixed: d.centerX + (side * d.w) / 4,
+      panelMount: true,
+    }));
+    expect(quantity(b, "endClamp")).toBe(4);
+    expect(quantity(b, "midClamp")).toBe(0);
+    expect(supports(b)).toHaveLength(0);
+    b.removedRails.push("manual-rail:0");
+    expect(quantity(b, "endClamp")).toBe(2);
+  });
+  it("editar el largo y posición de un riel actualiza piezas y coordenadas de patas", () => {
+    const b = createBed(),
+      rail = supportTracks(b)[0];
+    b.railOverrides = {
+      [rail.id]: {
+        axis: "x",
+        start: -2,
+        end: 2,
+        fixed: rail.fixed - 0.1,
+        panelMount: true,
+      },
+    };
+    expect(memberCuts(b).find((c) => c.id === rail.id)!.pieces).toBe(1);
+    for (const leg of supports(b).filter((s) => s.trackId === rail.id)) {
+      expect(leg.z).toBeCloseTo(rail.fixed - 0.1);
+      expect(leg.x).toBeGreaterThanOrEqual(-2);
+      expect(leg.x).toBeLessThanOrEqual(2);
+    }
+  });
+  it("eliminar todos los rieles deja sólo la tierra y los ajustes finales explícitos", () => {
+    const b = createBed();
+    b.removedRails = railCatalog(b).map((t) => t.id);
+    expect(supports(b)).toHaveLength(0);
+    expect(
+      calculate(b)
+        .filter((m) => m.id !== "ground")
+        .every((m) => m.quantity === 0),
+    ).toBe(true);
+    b.overrides.rail = 99;
+    expect(quantity(b, "rail")).toBe(99);
+  });
+  it("guarda rieles editados, retirados y movimiento de patas de cuadrícula y extra", () => {
+    const p = createProject(),
+      b = p.beds[0];
+    b.supportGrid = { eastWest: 3, northSouth: 2 };
+    const leg = supports(b)[0];
+    b.supportOverrides = {
+      [leg.id]: snapSupport(b, leg.id, leg.x + 0.1, leg.z),
+    };
+    const t = supportTracks(b)[0];
+    b.manualRails = [
+      {
+        id: "manual-rail:keep",
+        name: "Guardado",
+        axis: "x",
+        start: t.start,
+        end: t.end,
+        fixed: t.fixed,
+      },
+    ];
+    b.extraSupports = [
+      { id: "extra:keep", trackId: "manual-rail:keep", x: 0, z: t.fixed },
+    ];
+    b.supportOverrides["extra:keep"] = snapSupport(
+      b,
+      "extra:keep",
+      0.2,
+      t.fixed,
+    );
+    b.railOverrides = {
+      [t.id]: {
+        axis: t.axis,
+        start: t.start,
+        end: t.end,
+        fixed: t.fixed - 0.01,
+      },
+    };
+    b.removedRails = [t.id];
+    const imported = validateProject(JSON.parse(JSON.stringify(p))).beds[0];
+    expect(supportTracks(imported)).toEqual(supportTracks(b));
+    expect(supports(imported)).toEqual(supports(b));
+  });
+  it("rechaza rieles inválidos y evita que ajustes de geometría reemplacen IDs", () => {
+    const p = createProject(),
+      b = p.beds[0];
+    b.manualRails = [
+      {
+        id: "manual-rail:bad",
+        name: "Inválido",
+        axis: "x",
+        start: 2,
+        end: 1,
+        fixed: 0,
+      },
+    ];
+    expect(() => validateProject(p)).toThrow();
+    b.manualRails[0].end = 3;
+    b.manualRails[0].fixed = 200;
+    expect(() => validateProject(p)).toThrow();
+    delete b.manualRails;
+    const t = supportTracks(b)[0];
+    b.railOverrides = {
+      [t.id]: { axis: t.axis, start: t.start, end: t.end, fixed: t.fixed },
+    };
+    Object.assign(b.railOverrides[t.id], { id: "evil", manual: true });
+    expect(supportTracks(b)[0].id).toBe(t.id);
+    expect(supports(b)).toHaveLength(24);
+    b.railOverrides[t.id].axis = "z";
+    expect(() => validateProject(p)).toThrow();
+  });
+});
+
+it("encuadrar incluye rieles manuales fuera de la huella y respeta el giro de la cama", () => {
+  const p = createProject(),
+    b = p.beds[0];
+  b.position = { x: 10, z: 5 };
+  b.azimuth = 90;
+  b.manualRails = [
+    {
+      id: "manual-rail:outside",
+      name: "Fuera de huella",
+      axis: "x",
+      start: 10,
+      end: 20,
+      fixed: 0,
+    },
+  ];
+  expect(projectBounds(p).maxZ).toBeCloseTo(25.05);
+  b.removedRails = ["manual-rail:outside"];
+  expect(projectBounds(p).maxZ).toBeLessThan(20);
 });

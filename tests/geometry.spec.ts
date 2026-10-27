@@ -460,3 +460,53 @@ test("el fondo raster se ve en 3D y rechaza SVG disfrazado de imagen", async ({
   await page.screenshot({ path: "/tmp/unirack-v03-roof.png", fullPage: true });
   expect(errors).toEqual([]);
 });
+
+test("selecciona un riel en 3D y permite retirarlo individualmente", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await expect(page.locator("canvas")).toBeVisible({ timeout: 15000 });
+  await page
+    .getByRole("button", { name: "Editar rieles en 3D", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Frontal", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Mostrar sólo estructura", exact: true })
+    .click();
+  const p = await project(page),
+    b = p.beds[0],
+    rails = supportTracks(b).filter((t) => t.axis === "x"),
+    rail = rails[0],
+    d = dimensions(b);
+  await page
+    .getByRole("combobox", { name: "Riel seleccionado", exact: true })
+    .selectOption(rails[1].id);
+  const point = await screenPoint(
+    page,
+    new Vector3(
+      rail.start + 0.45,
+      (b.bases ? b.baseHeight : 0) +
+        b.frontHeight +
+        (d.frontZ - rail.fixed) * Math.tan(d.rad) -
+        0.065,
+      rail.fixed,
+    ),
+  );
+  await page.mouse.click(point.x, point.y);
+  await expect(
+    page.getByRole("combobox", { name: "Riel seleccionado", exact: true }),
+  ).toHaveValue(rail.id);
+  await page
+    .getByRole("button", { name: "Eliminar riel seleccionado", exact: true })
+    .click();
+  const after = await project(page);
+  expect(supportTracks(after.beds[0]).some((t) => t.id === rail.id)).toBe(
+    false,
+  );
+  await page
+    .getByRole("button", { name: "Reponer riel seleccionado", exact: true })
+    .click();
+  expect(errors).toEqual([]);
+});

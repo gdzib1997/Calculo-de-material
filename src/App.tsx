@@ -40,6 +40,7 @@ import {
   panelKey,
   sections,
   supports,
+  railCatalog,
   validateProject,
   snapSupport,
   bedPose,
@@ -58,6 +59,7 @@ import PanelLibrary from "./components/PanelLibrary";
 import RoofEditor from "./components/RoofEditor";
 import RailOptions from "./components/RailOptions";
 import SupportGrid from "./components/SupportGrid";
+import RailEditor from "./components/RailEditor";
 import BraceEditor from "./components/BraceEditor";
 import BedPlacement from "./components/BedPlacement";
 import { PanelEditor, LegEditor } from "./components/GeometryEditor";
@@ -68,7 +70,7 @@ function App() {
   const [selected, setSelected] = useState(project.beds[0].id);
   const bed = project.beds.find((b) => b.id === selected) || project.beds[0];
   const [tab, setTab] = useState<
-    "materials" | "layout" | "legs" | "braces" | "placement"
+    "materials" | "layout" | "legs" | "braces" | "placement" | "rails"
   >("materials");
   const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState("");
@@ -85,6 +87,7 @@ function App() {
   const [editMode, setEditMode] = useState<EditMode>("navigate");
   const [panelSelection, setPanelSelection] = useState("0:0");
   const [supportSelection, setSupportSelection] = useState("");
+  const [railSelection, setRailSelection] = useState("");
   const [braceFirst, setBraceFirst] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const importPending = useRef<Project | null>(null);
@@ -105,6 +108,9 @@ function App() {
       : "0:0";
   const selectedSupport =
     geometry.find((s) => s.id === supportSelection)?.id || geometry[0]?.id;
+  const catalog = railCatalog(bed);
+  const selectedRail =
+    catalog.find((t) => t.id === railSelection)?.id ?? catalog[0]?.id;
   const totalArea = project.beds.reduce(
     (n, b) => n + activeCount(b) * b.panelWidth * b.panelLength,
     0,
@@ -180,6 +186,11 @@ function App() {
     patch({ panelRotations: rotations });
     setEditMode("panel");
   }
+  function selectRail(id: string) {
+    setRailSelection(id);
+    setEditMode("rail");
+    setTab("rails");
+  }
   function selectSupport(id: string) {
     setSupportSelection(id);
     setEditMode("support");
@@ -218,6 +229,7 @@ function App() {
     setSelected(id);
     setBraceFirst("");
     setSupportSelection("");
+    setRailSelection("");
   }
   function moveBed(id: string, x: number, z: number) {
     changeProject((p) => ({
@@ -286,7 +298,8 @@ function App() {
   }
   function changeMode(mode: EditMode) {
     setEditMode(mode);
-    if (mode === "support") setTab("legs");
+    if (mode === "rail") setTab("rails");
+    else if (mode === "support") setTab("legs");
     else if (mode === "brace") setTab("braces");
     else if (mode === "bed") setTab("placement");
     else if (mode === "panel" || mode === "remove") setTab("layout");
@@ -423,7 +436,7 @@ function App() {
           <span className="environment-dot" /> ESPACIO DE DISEÑO SOLAR
         </div>
         <div className="header-right">
-          <span className="version-tag">BETA 04</span>
+          <span className="version-tag">BETA 05</span>
           <div className="avatar">GS</div>
         </div>
       </header>
@@ -1020,6 +1033,8 @@ function App() {
                   onModeChange={changeMode}
                   selectedPanel={selectedPanel}
                   selectedSupport={selectedSupport}
+                  selectedRail={selectedRail}
+                  onSelectRail={selectRail}
                   onSelectPanel={(r, c) => selectPanel(panelKey(r, c))}
                   onSelectSupport={selectSupport}
                   onMoveSupport={moveSupport}
@@ -1055,6 +1070,7 @@ function App() {
                   [
                     ["materials", "Materiales", Box],
                     ["layout", "Paneles", Grid2X2],
+                    ["rails", "Rieles", Layers],
                     ["legs", "Patas y bases", Triangle],
                     ["braces", "Contravientos", Wind],
                     ["placement", "Acomodar camas", Move],
@@ -1066,15 +1082,17 @@ function App() {
                     onClick={() => {
                       setTab(id);
                       setEditMode(
-                        id === "legs"
-                          ? "support"
-                          : id === "braces"
-                            ? "brace"
-                            : id === "placement"
-                              ? "bed"
-                              : id === "layout"
-                                ? "panel"
-                                : "navigate",
+                        id === "rails"
+                          ? "rail"
+                          : id === "legs"
+                            ? "support"
+                            : id === "braces"
+                              ? "brace"
+                              : id === "placement"
+                                ? "bed"
+                                : id === "layout"
+                                  ? "panel"
+                                  : "navigate",
                       );
                     }}
                   >
@@ -1405,6 +1423,15 @@ function App() {
                     </table>
                   </div>
                 </div>
+              )}
+              {tab === "rails" && (
+                <RailEditor
+                  key={bed.id}
+                  bed={bed}
+                  selected={selectedRail}
+                  onSelect={selectRail}
+                  onChange={patch}
+                />
               )}
               {tab === "braces" && (
                 <BraceEditor

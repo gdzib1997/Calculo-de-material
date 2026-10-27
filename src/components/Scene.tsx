@@ -182,11 +182,13 @@ function Panel({
   );
 }
 export type EditMode =
-  "navigate" | "remove" | "panel" | "support" | "brace" | "bed";
+  "navigate" | "remove" | "panel" | "support" | "brace" | "bed" | "rail";
 interface EditingProps {
   mode: EditMode;
   selectedPanel: string;
   selectedSupport?: string;
+  selectedRail?: string;
+  onSelectRail: (id: string) => void;
   onSelectPanel: (r: number, c: number) => void;
   onSelectSupport: (id: string) => void;
   onMoveSupport: (id: string, x: number, z: number) => void;
@@ -408,6 +410,8 @@ function Structure({
   mode,
   selectedPanel,
   selectedSupport,
+  selectedRail,
+  onSelectRail,
   onSelectPanel,
   onSelectSupport,
   onMoveSupport,
@@ -503,6 +507,12 @@ function Structure({
             return (
               <group key={t.id}>
                 <mesh
+                  onClick={(e) => {
+                    if (mode !== "rail") return;
+                    e.stopPropagation();
+                    if (active) onSelectRail(t.id);
+                    else onActivate();
+                  }}
                   position={[(t.start + t.end) / 2, -0.065, -distance]}
                   castShadow
                 >
@@ -510,7 +520,11 @@ function Structure({
                     args={[t.end - t.start + 2 * bed.overhang, 0.09, 0.06]}
                   />
                   <meshStandardMaterial
-                    color="#bfc7c5"
+                    color={
+                      active && mode === "rail" && selectedRail === t.id
+                        ? "#7eae52"
+                        : "#bfc7c5"
+                    }
                     metalness={0.7}
                     roughness={0.28}
                   />
@@ -540,6 +554,12 @@ function Structure({
           return (
             <mesh
               key={t.id}
+              onClick={(e) => {
+                if (mode !== "rail") return;
+                e.stopPropagation();
+                if (active) onSelectRail(t.id);
+                else onActivate();
+              }}
               position={[
                 t.fixed,
                 bed.frontHeight +
@@ -551,7 +571,14 @@ function Structure({
               castShadow
             >
               <boxGeometry args={[0.06, 0.07, length]} />
-              <meshStandardMaterial color="#929f9d" metalness={0.6} />
+              <meshStandardMaterial
+                color={
+                  active && mode === "rail" && selectedRail === t.id
+                    ? "#7eae52"
+                    : "#929f9d"
+                }
+                metalness={0.6}
+              />
             </mesh>
           );
         })}
@@ -678,6 +705,8 @@ export default function Scene({
   onModeChange,
   selectedPanel,
   selectedSupport,
+  selectedRail,
+  onSelectRail,
   onSelectPanel,
   onSelectSupport,
   onMoveSupport,
@@ -759,6 +788,7 @@ export default function Scene({
             ["navigate", "Navegar"],
             ["panel", "Girar paneles"],
             ["support", "Mover patas"],
+            ["rail", "Editar rieles"],
             ["brace", "Contravientos"],
             ["bed", "Mover camas"],
             ["remove", "Quitar paneles"],
@@ -841,6 +871,8 @@ export default function Scene({
                     onToggle={onToggle}
                     selectedPanel={selectedPanel}
                     selectedSupport={selectedSupport}
+                    selectedRail={selectedRail}
+                    onSelectRail={onSelectRail}
                     onSelectPanel={onSelectPanel}
                     onSelectSupport={onSelectSupport}
                     onMoveSupport={onMoveSupport}

@@ -40,7 +40,7 @@ Si reinstalas dependencias con Vite abierto, reinicia tu servidor antes de valid
 
 Las pruebas de navegador utilizan Chromium de `/usr/bin/chromium`; se puede cambiar con `CHROMIUM_PATH`. Vite se inicia automáticamente si no está corriendo. Los componentes 3D requieren WebGL. Los tipos de letra se sirven localmente. No hay servicios externos, API keys ni base de datos necesarios para operar la aplicación.
 
-## Uso de la versión 0.4
+## Uso de la versión 0.5
 
 - En **Biblioteca**, guarda modelos de paneles y selecciona sus medidas. Valores iniciales del usuario: panel **2.38 × 1.14 m**, riel **4.70 m**, separación **20 mm** y sobrante lateral editable **50 mm**.
 - **Girar paneles** permite seleccionar una pieza y girarla de 0 a 359°. Cada fila mantiene su propia separación: una fila superior horizontal no abre huecos ni cambia las patas o rieles de la inferior vertical. Se conserva el borde oeste y el frente de referencia de la cama.
@@ -70,3 +70,11 @@ El repositorio conserva el código fuente, la investigación y una rama web anal
 - Las abrazaderas de paneles verticales se montan en E–O; las de horizontales (incluido el giro individual) en N–S. La vista 3D y el cálculo comparten los puntos de sujeción.
 - En Patas y bases puedes elegir una cuadrícula E–O × N–S para toda la cama, quitar patas, reponerlas y añadir patas sobre cualquier riel habilitado. Las nuevas patas también se pueden mover a lo largo del riel. Se incluyen en las bases, longitudes y herrajes. Los rieles adicionales de apoyo de la cuadrícula se cuentan y se dibujan.
 - El perfil vertical se conserva en el despiece de patas, pero se elimina de las listas de materiales y de sus exportaciones.
+
+## Cambios BETA 05
+
+En **Rieles** puedes seleccionar cualquier E–O o N–S desde el 3D o desde la lista, eliminarlo, reponerlo y editar sus extremos y posición transversal. **Añadir riel** crea un perfil manual en el sentido elegido, con nombre y medidas propias. El sentido debe estar habilitado en Estructura. La opción de sujetar paneles cuenta los clamps que realmente coincidan con paneles de orientación compatible. Los rieles manuales no generan patas por sí solos: añádelas desde Patas y bases.
+
+Eliminar un riel suspende sus cortes, cruces, clamps y las patas que dependan de él, junto con los contravientos de esas patas. Reponerlo recupera esos datos. Una pata movida explícitamente a otro riel conserva su relación con ese destino; no regresa automáticamente al riel anterior si desaparece el nuevo. Los cambios quedan en el guardado local y en el JSON. Los materiales y exportaciones usan sólo elementos activos, respetando las cantidades finales que hayas fijado manualmente.
+
+**Patas y bases** permite añadir o quitar patas individuales. **Contravientos** permite añadir diagonales entre patas alineadas y eliminarlas con la papelera. **Encuadrar proyecto** también incluye los rieles manuales que queden fuera de la huella original.
