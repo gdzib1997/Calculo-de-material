@@ -8,13 +8,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import {
-  ContactShadows,
-  Grid,
-  OrbitControls,
-  Html,
-  Line,
-} from "@react-three/drei";
+import { ContactShadows, Grid, OrbitControls, Line } from "@react-three/drei";
 import {
   Vector3,
   Plane,
@@ -55,6 +49,7 @@ import {
 } from "../lib/model";
 import type { Bed, RoofImage, Support, Project } from "../lib/model";
 import { Connector, Clamp } from "./Hardware";
+import DimensionLabel from "./DimensionLabel";
 class SceneBoundary extends Component<
   { children: ReactNode },
   { failed: boolean }
@@ -352,15 +347,10 @@ function Leg({
         </>
       )}
       {(selected || measure) && (
-        <Html
+        <DimensionLabel
           position={[leg.x, leg.length + 0.15, leg.z]}
-          center
-          style={{ pointerEvents: "none" }}
-        >
-          <span className="dimension-label">
-            P-{String(index + 1).padStart(2, "0")} · {leg.length.toFixed(3)} m
-          </span>
-        </Html>
+          text={`P-${String(index + 1).padStart(2, "0")} · ${leg.length.toFixed(3)} m`}
+        />
       )}
     </group>
   );
@@ -614,14 +604,14 @@ function Structure({
             color="#46745c"
             lineWidth={1.5}
           />
-          <Html position={[d.centerX, 0, d.frontZ + 1]} center>
-            <span className="dimension-label">{d.width.toFixed(2)} m</span>
-          </Html>
-          <Html position={[d.maxX + 0.5, d.rearHeight / 2, d.backZ]} center>
-            <span className="dimension-label">
-              ↑ {d.rearHeight.toFixed(2)} m
-            </span>
-          </Html>
+          <DimensionLabel
+            position={[d.centerX, 0, d.frontZ + 1]}
+            text={`${d.width.toFixed(2)} m`}
+          />
+          <DimensionLabel
+            position={[d.maxX + 0.5, d.rearHeight / 2, d.backZ]}
+            text={`H ${d.rearHeight.toFixed(2)} m`}
+          />
         </>
       )}
     </group>

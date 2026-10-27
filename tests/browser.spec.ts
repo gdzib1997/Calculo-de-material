@@ -461,3 +461,47 @@ test("PDF limpio con ubicación, logo y sólo las vistas elegidas", async ({
     page.getByAltText("Logo de Soleon para PDF", { exact: true }),
   ).toBeVisible();
 });
+
+test("las cotas sobreviven cambios repetidos de cuadrícula y selección en 3D", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await expect(page.locator("canvas")).toBeVisible({ timeout: 15000 });
+  await page
+    .getByRole("button", { name: "Mostrar medidas", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Patas y bases", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Distribución de patas", exact: true })
+    .selectOption("grid");
+  for (const count of [2, 4, 3]) {
+    await page
+      .getByRole("spinbutton", { name: "Patas en E–O", exact: true })
+      .fill(String(count));
+    await page
+      .getByRole("button", { name: "Añadir pata al riel", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Quitar pata seleccionada", exact: true })
+      .click();
+    await page.getByRole("button", { name: /^Materiales/ }).click();
+    await page
+      .getByRole("button", { name: "Patas y bases", exact: true })
+      .click();
+  }
+  await page.getByRole("button", { name: "Superior", exact: true }).click();
+  await page.getByRole("button", { name: "Frontal", exact: true }).click();
+  await expect(
+    page
+      .getByRole("combobox", { name: "Pata seleccionada", exact: true })
+      .locator("option"),
+  ).toHaveCount(6);
+  await page
+    .locator(".model-card")
+    .screenshot({ path: "/tmp/unirack-v04-dimensions.png" });
+  expect(errors).toEqual([]);
+});
