@@ -51,9 +51,13 @@ import {
 import type { Bed, MaterialId, Project, PanelPreset } from "./lib/model";
 import { download, loadProject, safeName, saveProject } from "./lib/storage";
 import Field from "./components/Field";
+import PdfDialog from "./components/PdfDialog";
+import { capturePdfView } from "./lib/pdf-views";
+import type { PdfView } from "./lib/pdf-views";
 import PanelLibrary from "./components/PanelLibrary";
 import RoofEditor from "./components/RoofEditor";
 import RailOptions from "./components/RailOptions";
+import SupportGrid from "./components/SupportGrid";
 import BraceEditor from "./components/BraceEditor";
 import BedPlacement from "./components/BedPlacement";
 import { PanelEditor, LegEditor } from "./components/GeometryEditor";
@@ -68,6 +72,9 @@ function App() {
   >("materials");
   const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState("");
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [savedViews, setSavedViews] = useState<PdfView[]>([]);
+  const [pdfViews, setPdfViews] = useState<PdfView[]>([]);
   const [toast, setToast] = useState("");
   const [saveState, setSaveState] = useState(true);
   const [scope, setScope] = useState<"bed" | "project">("bed");
@@ -123,6 +130,7 @@ function App() {
     }
   }, [toast]);
   function changeProject(fn: (p: Project) => Project) {
+    setSaveState(false);
     setProject((p) => ({ ...fn(p), updatedAt: new Date().toISOString() }));
   }
   function patch(patch: Partial<Bed>) {
@@ -308,10 +316,21 @@ function App() {
   }
   async function exportFile(kind: "pdf" | "word" | "excel") {
     setMenu(false);
+    if (kind === "pdf") {
+      try {
+        setPdfViews([
+          ...savedViews,
+          { ...capturePdfView("Vista actual"), id: "current" },
+        ]);
+      } catch {
+        setPdfViews(savedViews);
+      }
+      setPdfOpen(true);
+      return;
+    }
     setBusy(kind);
     try {
-      const { exportExcel, exportPDF, exportWord } =
-        await import("./lib/export");
+      const { exportExcel, exportWord } = await import("./lib/export");
       let img: string | undefined;
       try {
         img = document.querySelector("canvas")?.toDataURL("image/png");
@@ -319,7 +338,7 @@ function App() {
         /* Imagen opcional. */
       }
       if (kind === "excel") await exportExcel(project);
-      if (kind === "pdf") await exportPDF(project, img, bed.name);
+
       if (kind === "word") await exportWord(project, img, bed.name);
       setToast("Reporte exportado con materiales, medidas y ubicaciones.");
     } catch (e) {
@@ -404,7 +423,7 @@ function App() {
           <span className="environment-dot" /> ESPACIO DE DISEÑO SOLAR
         </div>
         <div className="header-right">
-          <span className="version-tag">BETA 03</span>
+          <span className="version-tag">BETA 04</span>
           <div className="avatar">GS</div>
         </div>
       </header>
@@ -651,6 +670,34 @@ function App() {
             {settings === "layout" ? (
               <div className="settings-content">
                 <div className="section-label">DISTRIBUCIÓN DE LA CAMA</div>
+                <label className="field">
+                  <span>Tipo de cama</span>
+                  <select
+                    aria-label="Tipo de cama"
+                    className="full-select"
+                    value={
+                      bed.rows === 1
+                        ? "single"
+                        : bed.rows === 2
+                          ? "double"
+                          : "multiple"
+                    }
+                    onChange={(e) =>
+                      resize(
+                        "rows",
+                        e.target.value === "single"
+                          ? 1
+                          : e.target.value === "double"
+                            ? 2
+                            : 3,
+                      )
+                    }
+                  >
+                    <option value="single">Sencilla · 1 fila</option>
+                    <option value="double">Doble · 2 filas</option>
+                    <option value="multiple">Múltiple · 3 o más filas</option>
+                  </select>
+                </label>
                 <div className="field-grid">
                   <Field
                     label="Filas"
@@ -804,7 +851,8 @@ function App() {
                 <div className="tip">
                   <Info size={15} />
                   <p>
-                    Usa «Girar paneles» o «Quitar paneles» en el modelo. Al retirar una pieza se recalculan los materiales.
+                    Usa «Girar paneles» o «Quitar paneles» en el modelo. Al
+                    retirar una pieza se recalculan los materiales.
                   </p>
                 </div>
               </div>
@@ -812,6 +860,15 @@ function App() {
               <div className="settings-content">
                 <div className="section-label">RIELES Y APOYOS</div>
                 <RailOptions bed={bed} onChange={patch} />
+                <button
+                  className="button outline"
+                  onClick={() => {
+                    setTab("legs");
+                    setEditMode("support");
+                  }}
+                >
+                  Configurar cantidad de patas
+                </button>
                 <Field
                   label="Longitud comercial del riel"
                   value={bed.railLength}
@@ -823,13 +880,14 @@ function App() {
                 <Field
                   label="Separación máxima entre patas E–O"
                   value={bed.supportSpacing}
+                  disabled={!!bed.supportGrid}
                   onChange={(n) => patch({ supportSpacing: n })}
                   min={0.3}
                   max={3}
                   unit="m"
                 />
                 <Field
-                  label="Separación entre patas N–S por fila"
+                  label="Separación N–S de rieles por fila"
                   value={Number(
                     (
                       bed.supportSpacingNS ?? dims.l * 0.6 * Math.cos(dims.rad)
@@ -841,10 +899,10 @@ function App() {
                   unit="m"
                 />
                 <p className="help-text">
-                  N–S es la distancia horizontal entre las dos líneas de patas
-                  de cada fila. Si no cabe, se limita al fondo de esa fila menos
-                  10 cm. En «Patas y bases» puedes editar cada separación
-                  individual.
+                  La separación N–S ajusta los dos rieles de montaje de cada
+                  fila. La cuadrícula define la cantidad de patas de toda la
+                  cama; en «Patas y bases» puedes añadir, quitar y mover patas
+                  individualmente.
                 </p>
                 <div className="field-grid">
                   <Field
@@ -1243,6 +1301,12 @@ function App() {
               )}
               {tab === "legs" && (
                 <div className="legs-tab">
+                  <SupportGrid
+                    bed={bed}
+                    onChange={patch}
+                    selected={selectedSupport}
+                    onSelect={selectSupport}
+                  />
                   <LegEditor
                     bed={bed}
                     selected={selectedSupport}
@@ -1377,6 +1441,36 @@ function App() {
             </section>
           </div>
         </div>
+        <section className="pdf-capture-bar">
+          <button
+            className="button outline"
+            disabled={savedViews.length >= 8}
+            onClick={() => {
+              try {
+                const view = capturePdfView(`Vista ${savedViews.length + 1}`);
+                setSavedViews((v) => [...v, view]);
+                setToast("Vista guardada para el próximo PDF.");
+              } catch (e) {
+                setToast(
+                  e instanceof Error
+                    ? e.message
+                    : "No se pudo guardar la vista.",
+                );
+              }
+            }}
+          >
+            Guardar vista para PDF
+          </button>
+          <span>{savedViews.length} / 8 vistas guardadas</span>
+          {!!savedViews.length && (
+            <button className="text-button" onClick={() => setSavedViews([])}>
+              Borrar vistas guardadas
+            </button>
+          )}
+          <span className="help-text">
+            Gira, acerca o desplaza la cámara antes de guardar cada vista.
+          </span>
+        </section>
         <section className="project-meta">
           <div>
             <Leaf size={21} />
@@ -1429,6 +1523,31 @@ function App() {
             <X size={16} />
           </button>
         </div>
+      )}
+      {pdfOpen && (
+        <PdfDialog
+          project={project}
+          views={pdfViews}
+          onChange={(partial) => changeProject((p) => ({ ...p, ...partial }))}
+          onClose={() => setPdfOpen(false)}
+          onExport={async (views) => {
+            setPdfOpen(false);
+            setBusy("pdf");
+            try {
+              const { exportPDF } = await import("./lib/export");
+              await exportPDF(project, views);
+              setToast(
+                "PDF exportado con las vistas elegidas y los materiales.",
+              );
+            } catch (e) {
+              setToast(
+                e instanceof Error ? e.message : "No se pudo exportar el PDF.",
+              );
+            } finally {
+              setBusy("");
+            }
+          }}
+        />
       )}
       {libraryOpen && (
         <PanelLibrary

@@ -102,7 +102,8 @@ export function LegEditor({
   if (!leg)
     return (
       <div className="individual-editor">
-        Repón un panel para generar patas.
+        No hay patas activas. Añade una sobre un riel o repón las patas
+        retiradas.
       </div>
     );
   const track = tracks.find((t) => t.id === leg.trackId)!,

@@ -92,6 +92,8 @@ export async function exportExcel(p: Project) {
     "Giro en techo",
     "Riel comercial (m)",
     "N–S",
+    "E–O",
+    "Cuadrícula E–O × N–S",
     "Separación máxima E–O",
     "Separación N–S por fila",
   ]);
@@ -99,7 +101,11 @@ export async function exportExcel(p: Project) {
     beds.addRow([
       ...r,
       p.beds[i].railLength,
-      p.beds[i].nsMode ?? "auto",
+      p.beds[i].nsMode === "exclude" ? "No" : "Sí",
+      p.beds[i].ewMode === "exclude" ? "No" : "Sí",
+      p.beds[i].supportGrid
+        ? `${p.beds[i].supportGrid!.eastWest} × ${p.beds[i].supportGrid!.northSouth}`
+        : "Según separación",
       p.beds[i].supportSpacing,
       p.beds[i].supportSpacingNS ?? "automática",
     ]),
@@ -276,141 +282,89 @@ export async function exportExcel(p: Project) {
 }
 export async function exportPDF(
   p: Project,
-  image?: string,
-  imageTitle?: string,
+  views: import("./pdf-views").PdfView[] = [],
 ) {
   const { jsPDF } = await import("jspdf");
   const { default: autoTable } = await import("jspdf-autotable");
-  const pdf = new jsPDF();
-  pdf.setTextColor("#244a40");
-  pdf.setFontSize(22);
-  pdf.text("UNIRACK / STUDIO", 14, 23);
-  pdf.setFontSize(15);
-  const name = pdf.splitTextToSize(p.name, 180);
-  pdf.text(name, 14, 35);
-  let y = 42 + (name.length - 1) * 6;
-  pdf.setFontSize(9);
-  const info = pdf.splitTextToSize(
-    `Cliente: ${p.customer || "Sin especificar"} · ${date()}`,
-    180,
-  );
-  pdf.text(info, 14, y);
-  y += info.length * 4 + 6;
-  if (image) {
-    pdf.addImage(image, "PNG", 14, y, 182, 85);
-    y += 91;
-    pdf.text(
-      pdf.splitTextToSize(
-        `Vista actual del proyecto. Cama seleccionada: ${imageTitle ?? ""}.`,
-        180,
-      ),
-      14,
-      y,
-    );
-    y += 10;
-  }
-  autoTable(pdf, {
-    startY: y,
-    head: [headers],
-    body: materialRows(p),
-    styles: { fontSize: 9 },
-    headStyles: { fillColor: [36, 74, 64] },
-  });
-  pdf.addPage();
-  pdf.setFontSize(14);
-  pdf.text("Camas del proyecto", 14, 20);
-  autoTable(pdf, {
-    startY: 27,
-    head: [
-      [
-        "Cama",
-        "Filas × columnas",
-        "Paneles",
-        "Inclinación",
-        "Huella",
-        "E–O / N–S",
-        "Giro",
-      ],
-    ],
-    body: bedRows(p),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [36, 74, 64] },
-  });
-  for (const b of p.beds) {
-    pdf.addPage();
-    pdf.setFontSize(14);
-    pdf.text(`${b.name} · Patas`, 14, 20);
-    autoTable(pdf, {
-      startY: 28,
-      head: [
-        ["Pata", "Fila", "E–O (m)", "N–S (m)", "Longitud (m)", "Riel / eje"],
-      ],
-      body: supports(b).map((s, i) => [
-        i + 1,
-        s.row + 1,
-        s.x.toFixed(3),
-        s.z.toFixed(3),
-        s.length.toFixed(3),
-        s.axis === "x" ? "E–O" : "N–S",
-      ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [36, 74, 64] },
-    });
-    const connections = braceRows(b);
-    if (connections.length) {
-      pdf.addPage();
-      pdf.setFontSize(14);
-      pdf.text(`${b.name} · Contravientos`, 14, 20);
-      autoTable(pdf, {
-        startY: 28,
-        head: [
-          [
-            "Pata origen",
-            "Pata destino",
-            "Eje",
-            "Longitud",
-            "Herrajes",
-            "Tornillos",
-          ],
-        ],
-        body: connections,
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [36, 74, 64] },
-      });
+  const pdf = new jsPDF(),
+    orange: [number, number, number] = [235, 112, 30];
+  function header() {
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(40, 40, 40);
+    pdf.setFontSize(17);
+    const title = pdf.splitTextToSize(p.name || "Proyecto", 132);
+    pdf.text(title, 14, 22);
+    if (p.brandLogo) {
+      const img = pdf.getImageProperties(p.brandLogo.dataUrl),
+        scale = Math.min(42 / img.width, 20 / img.height);
+      pdf.addImage(
+        p.brandLogo.dataUrl,
+        154 + (42 - img.width * scale) / 2,
+        12,
+        img.width * scale,
+        img.height * scale,
+      );
+    } else {
+      pdf.setTextColor(...orange);
+      pdf.setFontSize(20);
+      pdf.text("SOLEON", 196, 23, { align: "right" });
     }
-    const rotations = Object.entries(b.panelRotations ?? {}).filter(
-      ([, a]) => a !== 0,
-    );
-    if (rotations.length) {
-      pdf.addPage();
-      pdf.setFontSize(14);
-      pdf.text(`${b.name} · Paneles girados`, 14, 20);
-      autoTable(pdf, {
-        startY: 28,
-        head: [["Fila", "Columna", "Giro"]],
-        body: rotations.map(([key, a]) => {
-          const [r, c] = key.split(":").map(Number);
-          return [r + 1, c + 1, `${a}°`];
-        }),
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [36, 74, 64] },
-      });
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.setTextColor(70, 70, 70);
+    let y = 27 + (title.length - 1) * 7;
+    for (const text of [
+      `Cliente: ${p.customer || "—"}`,
+      `Ubicación: ${p.location || "—"}`,
+    ]) {
+      const lines = pdf.splitTextToSize(text, 182);
+      pdf.text(lines, 14, y);
+      y += lines.length * 5;
     }
+    pdf.setDrawColor(...orange);
+    pdf.setLineWidth(0.6);
+    pdf.line(14, y + 1, 196, y + 1);
+    return y + 9;
   }
-  pdf.addPage();
-  pdf.setFontSize(14);
-  pdf.text("Techo de referencia", 14, 20);
-  pdf.setFontSize(10);
-  pdf.text(pdf.splitTextToSize(roofText(p), 180), 14, 31);
+  const startY = header();
+  autoTable(pdf, {
+    startY,
+    head: [["Material", "Cantidad", "Unidad"]],
+    body: aggregate(p).map((m) => [m.name, m.quantity, m.unit]),
+    theme: "plain",
+    styles: { fontSize: 10, cellPadding: 3, textColor: [45, 45, 45] },
+    headStyles: { fillColor: orange, textColor: [255, 255, 255] },
+    columnStyles: {
+      1: { halign: "right", cellWidth: 25 },
+      2: { cellWidth: 22 },
+    },
+    margin: { left: 14, right: 14, bottom: 16 },
+  });
+  // Cada vista conserva su proporción; sólo se incluyen las seleccionadas.
+  let y =
+    (pdf as typeof pdf & { lastAutoTable: { finalY: number } }).lastAutoTable
+      .finalY + 10;
+  for (const view of views) {
+    const img = pdf.getImageProperties(view.dataUrl),
+      scale = Math.min(182 / img.width, 100 / img.height),
+      width = img.width * scale,
+      height = img.height * scale;
+    if (y + height + 9 > 278) {
+      pdf.addPage();
+      y = 18;
+    }
+    pdf.setTextColor(65, 65, 65);
+    pdf.setFontSize(10);
+    pdf.text(pdf.splitTextToSize(view.title, 182), 14, y);
+    y += 5;
+    pdf.addImage(view.dataUrl, "PNG", 14 + (182 - width) / 2, y, width, height);
+    y += height + 12;
+  }
   for (let i = 1; i <= pdf.getNumberOfPages(); i++) {
     pdf.setPage(i);
     pdf.setFontSize(8);
-    pdf.setTextColor("#7b8c74");
-    pdf.text(
-      `Unirack Studio · Estimación de materiales · ${i} / ${pdf.getNumberOfPages()}`,
-      14,
-      289,
-    );
+    pdf.setTextColor(140, 140, 140);
+    pdf.text(`${i} / ${pdf.getNumberOfPages()}`, 196, 289, { align: "right" });
   }
   pdf.save(`${safeName(p.name)}.pdf`);
 }

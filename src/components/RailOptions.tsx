@@ -9,22 +9,26 @@ export default function RailOptions({
 }) {
   return (
     <>
-      <label className="field">
-        <span>Rieles norte–sur</span>
-        <select
-          className="full-select"
-          aria-label="Rieles norte–sur"
-          value={bed.nsMode ?? "auto"}
-          onChange={(e) =>
-            onChange({ nsMode: e.target.value as Bed["nsMode"] })
-          }
-        >
-          <option value="auto">Automático · sólo tramos dobles</option>
-          <option value="include">Incluir rieles norte–sur</option>
-          <option value="exclude">No incluir rieles norte–sur</option>
-        </select>
-      </label>
-      {bed.nsMode !== "exclude" && (
+      {(
+        [
+          ["ewMode", "Rieles este–oeste"],
+          ["nsMode", "Rieles norte–sur"],
+        ] as const
+      ).map(([key, label]) => (
+        <label className="field" key={key}>
+          <span>{label}</span>
+          <select
+            className="full-select"
+            aria-label={label}
+            value={bed[key] === "exclude" ? "exclude" : "include"}
+            onChange={(e) => onChange({ [key]: e.target.value })}
+          >
+            <option value="include">Incluir {label.toLowerCase()}</option>
+            <option value="exclude">No incluir {label.toLowerCase()}</option>
+          </select>
+        </label>
+      ))}
+      {bed.nsMode !== "exclude" && bed.ewMode !== "exclude" && (
         <Field
           label="Beam Clip por cruce N–S / E–O"
           value={bed.beamClipsPerCrossing ?? 1}
@@ -35,8 +39,9 @@ export default function RailOptions({
         />
       )}
       <p className="help-text">
-        Coloca los contravientos eligiendo dos patas en la pestaña
-        «Contravientos» o directamente en 3D.
+        Elige los rieles independientemente del número de filas. Los clamps
+        sujetan los paneles verticales en E–O y los horizontales en N–S. Coloca
+        los contravientos eligiendo dos patas.
       </p>
       <div className="divider" />
     </>

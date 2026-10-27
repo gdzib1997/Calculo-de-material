@@ -40,7 +40,7 @@ Si reinstalas dependencias con Vite abierto, reinicia tu servidor antes de valid
 
 Las pruebas de navegador utilizan Chromium de `/usr/bin/chromium`; se puede cambiar con `CHROMIUM_PATH`. Vite se inicia automáticamente si no está corriendo. Los componentes 3D requieren WebGL. Los tipos de letra se sirven localmente. No hay servicios externos, API keys ni base de datos necesarios para operar la aplicación.
 
-## Uso de la versión 0.3
+## Uso de la versión 0.4
 
 - En **Biblioteca**, guarda modelos de paneles y selecciona sus medidas. Valores iniciales del usuario: panel **2.38 × 1.14 m**, riel **4.70 m**, separación **20 mm** y sobrante lateral editable **50 mm**.
 - **Girar paneles** permite seleccionar una pieza y girarla de 0 a 359°. Cada fila mantiene su propia separación: una fila superior horizontal no abre huecos ni cambia las patas o rieles de la inferior vertical. Se conserva el borde oeste y el frente de referencia de la cama.
@@ -48,11 +48,13 @@ Las pruebas de navegador utilizan Chromium de `/usr/bin/chromium`; se puede camb
 - **Navegar** gira la cámara; la rueda acerca o aleja. **Desplazar vista** usa el arrastre para recorrer el techo. El botón derecho también desplaza y **Encuadrar proyecto** reúne las camas en pantalla.
 - En **Patas y bases**, selecciona la pata y su **Riel de desplazamiento**. Sólo puede moverse sobre ese eje: X para E–O, Y para N–S. El otro campo queda fijo. Puedes arrastrarla o introducir su posición/separación a lo largo del riel. La longitud y el bloque siguen la posición de la pata.
 - **Contravientos** se coloca eligiendo dos patas alineadas desde los selectores o con dos clics en 3D. No se crean diagonales automáticas. Puedes invertir o eliminar cada unión. Las uniones a patas ausentes/desalineadas se conservan en el proyecto, pero no se dibujan ni se cuentan hasta corregirlas.
+- **Mostrar sólo estructura** oculta los paneles para ver los rieles E–O y N–S, patas, bases y herrajes; también se puede guardar esa vista en el PDF. No cambia las cantidades.
 - **Mostrar herrajes** presenta L-Foot, Tilt Plate, tornillos, abrazaderas y Beam Clip de la cama seleccionada. Cada pata tiene L-Foot abajo y Tilt Plate arriba, según la configuración confirmada por el usuario. **Mostrar medidas** presenta las longitudes de las patas.
 - **Techo** admite foto JPEG, PNG o WebP hasta 10 MB; se redimensiona y se vuelve a codificar. Se guarda sólo en el navegador/proyecto. Puedes ajustar ancho, largo, posición, giro y opacidad.
 - **Escalar con medidas de referencia** abre la foto. Marca dos puntos, introduce su distancia real y aplica. Una referencia conserva la proporción de la foto; dos referencias distintas (preferentemente una horizontal y otra vertical) calculan el ancho y largo por separado. Hay botones para usar el ancho o largo de un panel como distancia conocida. Las referencias quedan en el JSON y en el informe del techo. No se corrige perspectiva de fotos oblicuas.
 - **Materiales** reúne los rieles en una sola partida y conserva cantidades finales editables. Los orígenes automáticos/manuales y el botón de restablecer permiten distinguirlos. No hay precios ni apartados de reglas en la interfaz o en los reportes.
-- **Exportar** genera Word, PDF o Excel sin importes. Incluye camas, materiales, patas y sus rieles, contravientos, giros y ubicación; Excel también presenta perfiles y biblioteca, y el techo con su imagen si existe.
+- **PDF** usa un formato limpio: proyecto, cliente, ubicación, logo de Soleon y lista de materiales (sin el perfil vertical). Usa **Guardar vista para PDF** después de acomodar la cámara para capturar hasta ocho vistas durante la sesión. Al exportar, elige las vistas y carga el logo original JPEG/PNG/WebP; se guarda con la ubicación en el proyecto. Sin imagen de logo, se utiliza el texto SOLEON en naranja. No se incluyen tablas técnicas ni anexos.
+- **Word y Excel** conservan el detalle de camas, materiales, patas, rieles, contravientos, giros y ubicación; Excel también presenta perfiles y biblioteca, y el techo con su imagen si existe.
 - **Guardar proyecto** descarga JSON; **Abrir** lo recupera. Los proyectos anteriores se admiten, conservando cantidades manuales y normalizando las ubicaciones/uniones que antes no existían. Guarda copias descargadas: localStorage no sincroniza equipos ni sustituye un respaldo.
 
 ## Algoritmo y alcance
@@ -60,3 +62,11 @@ Las pruebas de navegador utilizan Chromium de `/usr/bin/chromium`; se puede camb
 Consulta [docs/calculo.md](docs/calculo.md). La tabla original se conserva como referencia histórica en `src/lib/model.ts`. La versión actual calcula perfiles, uniones y herrajes a partir de la geometría y las reglas confirmadas por el usuario. No se afirma certificación, compatibilidad de componentes ni cumplimiento de manuales Ascender. Antes de usar cantidades para compra o construcción hay que confirmar el sistema exacto, la longitud a la que corresponde la tabla, sus componentes, las condiciones del sitio y la ingeniería estructural.
 
 El repositorio conserva el código fuente, la investigación y una rama web analizada con Defender. La descarga empaquetada sigue suspendida. GitHub Pages está activo; no se ha publicado un entorno cloud nuevo.
+
+## Cambios BETA 04
+
+- Tipo de cama elegido: sencilla = una fila, doble = dos; múltiples = tres o más. La selección explícita de rieles E–O y N–S es independiente de las filas; no hay modo automático visible.
+- Ambos sentidos de riel se dibujan y se suman en Riel (total). Beam Clip sólo cuenta los cruces reales entre sentidos habilitados.
+- Las abrazaderas de paneles verticales se montan en E–O; las de horizontales (incluido el giro individual) en N–S. La vista 3D y el cálculo comparten los puntos de sujeción.
+- En Patas y bases puedes elegir una cuadrícula E–O × N–S para toda la cama, quitar patas, reponerlas y añadir patas sobre cualquier riel habilitado. Las nuevas patas también se pueden mover a lo largo del riel. Se incluyen en las bases, longitudes y herrajes. Los rieles adicionales de apoyo de la cuadrícula se cuentan y se dibujan.
+- El perfil vertical se conserva en el despiece de patas, pero se elimina de las listas de materiales y de sus exportaciones.

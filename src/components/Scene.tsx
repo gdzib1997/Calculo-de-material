@@ -35,6 +35,7 @@ import {
   Compass,
   Move,
   Wrench,
+  Layers,
 } from "lucide-react";
 import {
   dimensions,
@@ -50,6 +51,7 @@ import {
   supportTracks,
   northSouthSections,
   braces,
+  panelClamps,
 } from "../lib/model";
 import type { Bed, RoofImage, Support, Project } from "../lib/model";
 import { Connector, Clamp } from "./Hardware";
@@ -423,6 +425,7 @@ function Structure({
   active,
   onActivate,
   hardware,
+  showPanels,
   braceFirst,
   onBracePick,
 }: {
@@ -433,6 +436,7 @@ function Structure({
   active: boolean;
   onActivate: () => void;
   hardware: boolean;
+  showPanels: boolean;
   braceFirst: string;
   onBracePick: (id: string) => void;
 } & EditingProps) {
@@ -465,38 +469,43 @@ function Structure({
         />
       ))}
       <group position={[0, bed.frontHeight, d.frontZ]} rotation={[d.rad, 0, 0]}>
-        {Array.from({ length: bed.rows }, (_, r) =>
-          Array.from({ length: bed.columns }, (_, c) => (
-            <group
-              key={panelKey(r, c)}
-              position={[d.rowColumnCenters[r][c], 0, -d.rowCenters[r]]}
-              rotation={[0, (panelRotation(bed, r, c) * Math.PI) / 180, 0]}
-            >
-              <Panel
-                detailed={active}
-                w={d.w}
-                l={d.l}
-                removed={!isActive(bed, r, c)}
-                interactive={
-                  active
-                    ? mode === "panel" || mode === "remove"
-                    : mode !== "brace"
-                }
-                selected={
-                  active && mode === "panel" && selectedPanel === panelKey(r, c)
-                }
-                onClick={() => {
-                  if (!active) {
-                    onActivate();
-                    return;
+        <group visible={showPanels}>
+          {Array.from({ length: bed.rows }, (_, r) =>
+            Array.from({ length: bed.columns }, (_, c) => (
+              <group
+                key={panelKey(r, c)}
+                position={[d.rowColumnCenters[r][c], 0, -d.rowCenters[r]]}
+                rotation={[0, (panelRotation(bed, r, c) * Math.PI) / 180, 0]}
+              >
+                <Panel
+                  detailed={active}
+                  w={d.w}
+                  l={d.l}
+                  removed={!isActive(bed, r, c)}
+                  interactive={
+                    showPanels &&
+                    (active
+                      ? mode === "panel" || mode === "remove"
+                      : mode !== "brace")
                   }
-                  if (mode === "remove") onToggle(r, c);
-                  else if (mode === "panel") onSelectPanel(r, c);
-                }}
-              />
-            </group>
-          )),
-        )}
+                  selected={
+                    active &&
+                    mode === "panel" &&
+                    selectedPanel === panelKey(r, c)
+                  }
+                  onClick={() => {
+                    if (!active) {
+                      onActivate();
+                      return;
+                    }
+                    if (mode === "remove") onToggle(r, c);
+                    else if (mode === "panel") onSelectPanel(r, c);
+                  }}
+                />
+              </group>
+            )),
+          )}
+        </group>
         {tracks
           .filter((t) => t.axis === "x")
           .map((t) => {
@@ -516,44 +525,36 @@ function Structure({
                     roughness={0.28}
                   />
                 </mesh>
-                {hardware && active && (
-                  <>
-                    <Clamp position={[t.start, 0.05, -distance]} end />
-                    <Clamp position={[t.end, 0.05, -distance]} end />
-                    {Array.from({ length: bed.columns - 1 }, (_, c) =>
-                      isActive(bed, t.row!, c) &&
-                      isActive(bed, t.row!, c + 1) &&
-                      d.rowColumnCenters[t.row!][c] >= t.start &&
-                      d.rowColumnCenters[t.row!][c] < t.end ? (
-                        <Clamp
-                          key={c}
-                          position={[
-                            d.rowColumnCenters[t.row!][c] +
-                              d.rowColumnWidths[t.row!][c] / 2 +
-                              bed.gap / 2,
-                            0.05,
-                            -distance,
-                          ]}
-                        />
-                      ) : null,
-                    )}
-                  </>
-                )}
               </group>
             );
           })}
+        {hardware &&
+          active &&
+          panelClamps(bed).map((c) => (
+            <group
+              key={c.id}
+              position={[c.x, 0.05, -c.distance]}
+              rotation={[0, c.axis === "z" ? Math.PI / 2 : 0, 0]}
+            >
+              <Clamp position={[0, 0, 0]} end={c.end} />
+            </group>
+          ))}
       </group>
       {tracks
         .filter((t) => t.axis === "z")
         .map((t) => {
           const distance = (d.frontZ - (t.start + t.end) / 2) / Math.cos(d.rad),
-            length = (t.end - t.start) / Math.cos(d.rad);
+            length =
+              (t.end - t.start) / Math.cos(d.rad) +
+              (t.panelMount ? 2 * bed.overhang : 0);
           return (
             <mesh
               key={t.id}
               position={[
                 t.fixed,
-                bed.frontHeight + distance * Math.sin(d.rad) - 0.15,
+                bed.frontHeight +
+                  distance * Math.sin(d.rad) -
+                  (t.panelMount ? 0.065 : 0.15),
                 (t.start + t.end) / 2,
               ]}
               rotation={[d.rad, 0, 0]}
@@ -710,7 +711,8 @@ export default function Scene({
     [reset, setReset] = useState(0),
     [rotate, setRotate] = useState(false),
     [pan, setPan] = useState(false),
-    [hardware, setHardware] = useState(true);
+    [hardware, setHardware] = useState(true),
+    [structureOnly, setStructureOnly] = useState(false);
   useEffect(() => {
     if (mode !== "navigate") setPan(false);
   }, [mode]);
@@ -845,6 +847,7 @@ export default function Scene({
                     onActivate={() => onSelectBed(b.id)}
                     measure={measure}
                     hardware={hardware}
+                    showPanels={!structureOnly}
                     onToggle={onToggle}
                     selectedPanel={selectedPanel}
                     selectedSupport={selectedSupport}
@@ -943,6 +946,14 @@ export default function Scene({
             onClick={() => setRotate(!rotate)}
           >
             <Move3D size={18} />
+          </button>
+          <button
+            title="Mostrar sólo estructura"
+            aria-pressed={structureOnly}
+            className={structureOnly ? "active" : ""}
+            onClick={() => setStructureOnly(!structureOnly)}
+          >
+            <Layers size={18} />
           </button>
           <button
             title="Mostrar herrajes"

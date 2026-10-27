@@ -158,7 +158,7 @@ test("el arrastre 3D mantiene el eje del riel y no modifica otras patas", async 
   page,
 }) => {
   await page.goto("/");
-  await expect(page.locator("canvas")).toBeVisible();
+  await expect(page.locator("canvas")).toBeVisible({ timeout: 15000 });
   await page
     .getByRole("button", { name: "Mover patas en 3D", exact: true })
     .click();

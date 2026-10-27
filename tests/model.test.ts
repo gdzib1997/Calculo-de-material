@@ -19,6 +19,7 @@ import {
   bedPose,
   projectBounds,
   validateProject,
+  panelClamps,
 } from "../src/lib/model";
 import type { Bed, MaterialId, RoofImage } from "../src/lib/model";
 const quantity = (b: Bed, id: MaterialId) =>
@@ -86,7 +87,7 @@ describe("Materiales por geometría", () => {
     expect(railBreakdown({ ...b, overhang: 0.05 }).eastWest).toBe(4);
   });
   it("N–S es opcional, incluso en una cama sencilla", () => {
-    const b = { ...createBed(), rows: 1 };
+    const b: Bed = { ...createBed(), rows: 1, nsMode: "exclude" };
     expect(railBreakdown(b).northSouth).toBe(0);
     expect(quantity(b, "beamClip")).toBe(0);
     b.nsMode = "include";
@@ -175,7 +176,9 @@ describe("Filas independientes y rieles", () => {
     const b = { ...createBed(), columns: 4 };
     b.panelRotations = { "1:0": 90, "1:1": 90, "1:2": 90, "1:3": 90 };
     const d = dimensions(b);
-    for (const t of supportTracks(b).filter((t) => t.axis === "z")) {
+    for (const t of supportTracks(b).filter(
+      (t) => t.axis === "z" && !t.panelMount,
+    )) {
       expect(t.fixed).toBeGreaterThanOrEqual(d.minX - 1e-7);
       expect(t.fixed).toBeLessThanOrEqual(d.minX + d.rowWidths[0] + 1e-7);
     }
@@ -464,5 +467,192 @@ describe("Camas y compatibilidad de proyectos", () => {
     p.roof.dataUrl =
       "data:image/png;base64," + btoa('<svg onload="alert(1)"></svg>');
     expect(() => validateProject(p)).toThrow();
+  });
+});
+
+describe("Elección de rieles, abrazaderas y cuadrícula", () => {
+  it("el perfil vertical no aparece en materiales, pero las patas conservan bases y herrajes", () => {
+    const b = createBed();
+    b.overrides.leg = 500;
+    expect(calculate(b).some((m) => m.id === "leg")).toBe(false);
+    expect(quantity(b, "concrete")).toBe(supports(b).length);
+    const p = createProject();
+    p.beds = [b];
+    expect(() => validateProject(p)).not.toThrow();
+  });
+  for (const rows of [1, 2, 3])
+    for (const ew of ["include", "exclude"] as const)
+      for (const ns of ["include", "exclude"] as const) {
+        it(`respeta elección E–O ${ew} / N–S ${ns} con ${rows} filas`, () => {
+          const b: Bed = { ...createBed(), rows, ewMode: ew, nsMode: ns };
+          const q = railBreakdown(b);
+          expect(q.eastWest > 0).toBe(ew === "include");
+          expect(q.northSouth > 0).toBe(ns === "include");
+          if (ew === "exclude" || ns === "exclude") expect(q.beamClip).toBe(0);
+          if (ew === "exclude") expect(panelClamps(b)).toHaveLength(0);
+          if (ew === "exclude" && ns === "exclude")
+            expect(supports(b)).toHaveLength(0);
+        });
+      }
+  it("los clamps verticales se ubican sólo sobre rieles E–O", () => {
+    const b = createBed(),
+      d = dimensions(b);
+    const clamps = panelClamps(b),
+      tracks = supportTracks(b);
+    expect(clamps).toHaveLength(28);
+    for (const c of clamps) {
+      expect(c.axis).toBe("x");
+      expect(
+        tracks.some(
+          (t) =>
+            t.axis === "x" &&
+            Math.abs(t.fixed - (d.frontZ - c.distance * Math.cos(d.rad))) <
+              1e-6 &&
+            c.x >= t.start - 1e-6 &&
+            c.x <= t.end + 1e-6,
+        ),
+      ).toBe(true);
+    }
+  });
+  it("paneles horizontales comparten mid clamp entre filas sobre N–S", () => {
+    const b: Bed = {
+      ...createBed(),
+      orientation: "landscape",
+      columns: 4,
+      ewMode: "exclude",
+    };
+    expect(panelClamps(b).every((c) => c.axis === "z")).toBe(true);
+    expect(quantity(b, "midClamp")).toBe(8);
+    expect(quantity(b, "endClamp")).toBe(16);
+    expect(quantity({ ...b, nsMode: "exclude" }, "endClamp")).toBe(0);
+    b.removed = ["0:0"];
+    expect(quantity(b, "midClamp")).toBe(6);
+    expect(quantity(b, "endClamp")).toBe(16);
+  });
+  it("un giro individual de 90° cambia sólo los clamps de ese panel a N–S", () => {
+    const b = { ...createBed(), columns: 2 };
+    b.panelRotations = { "1:0": 90 };
+    const clamps = panelClamps(b);
+    expect(clamps.filter((c) => c.axis === "z")).toHaveLength(4);
+    expect(clamps.filter((c) => c.axis === "x")).toHaveLength(10);
+    expect(calculate(b).find((m) => m.id === "midClamp")!.quantity).toBe(2);
+  });
+  it("la cuadrícula 4×2 abarca toda una cama de tres filas sin modificar paneles", () => {
+    const b: Bed = {
+      ...createBed(),
+      rows: 3,
+      supportGrid: { eastWest: 4, northSouth: 2 },
+    };
+    const legs = supports(b),
+      d = dimensions(b);
+    expect(legs).toHaveLength(8);
+    expect(new Set(legs.map((s) => s.z)).size).toBe(2);
+    expect(
+      Math.max(...legs.map((s) => s.z)) - Math.min(...legs.map((s) => s.z)),
+    ).toBeCloseTo((d.length - 0.4) * Math.cos(d.rad));
+    expect(dimensions({ ...b, supportGrid: undefined })).toEqual(d);
+    expect(railBreakdown(b).eastWest).toBeGreaterThan(
+      railBreakdown({ ...b, supportGrid: undefined }).eastWest,
+    );
+    expect(quantity(b, "tBolt")).toBe(24);
+  });
+  it("cuadrícula N–S funciona cuando sólo se eligen rieles N–S", () => {
+    const b: Bed = {
+      ...createBed(),
+      ewMode: "exclude",
+      supportGrid: { eastWest: 3, northSouth: 4 },
+    };
+    expect(supports(b)).toHaveLength(12);
+    expect(supports(b).every((s) => s.axis === "z")).toBe(true);
+    expect(railBreakdown(b).eastWest).toBe(0);
+  });
+  it("quitar y añadir una pata actualiza longitud, herrajes, bloques y contravientos", () => {
+    const b: Bed = {
+      ...createBed(),
+      supportGrid: { eastWest: 4, northSouth: 2 },
+    };
+    addBrace(b, "ew");
+    const before = supports(b),
+      removed = before[0];
+    b.removedSupports = [removed.id];
+    expect(supports(b)).toHaveLength(7);
+    expect(braces(b)).toHaveLength(0);
+    expect(quantity(b, "lFoot")).toBe(7);
+    expect(quantity(b, "tiltPlate")).toBe(7);
+    expect(quantity(b, "tBolt")).toBe(21);
+    const t = supportTracks(b)[0];
+    b.extraSupports = [
+      { id: "extra:test", trackId: t.id, x: (t.start + t.end) / 2, z: t.fixed },
+    ];
+    expect(supports(b)).toHaveLength(8);
+    expect(quantity(b, "concrete")).toBe(8);
+    const extra = supports(b).find((s) => s.id === "extra:test")!;
+    expect(extra.trackId).toBe(t.id);
+    expect(extra.length).toBeGreaterThan(0);
+    b.extraSupports[0].x = 999;
+    expect(supports(b).find((s) => s.id === "extra:test")!.x).toBe(t.end);
+    b.removedSupports = [];
+    expect(supports(b)).toHaveLength(9);
+    expect(braces(b)).toHaveLength(1);
+  });
+  it("guarda cuadrícula, patas extra, ubicación y logo en el proyecto", () => {
+    const p = createProject(),
+      b = p.beds[0];
+    b.supportGrid = { eastWest: 3, northSouth: 2 };
+    b.removedSupports = [supports(b)[0].id];
+    const t = supportTracks(b)[0];
+    b.extraSupports = [
+      { id: "extra:keep", trackId: t.id, x: t.start, z: t.fixed },
+    ];
+    p.location = "Mérida, Yucatán";
+    const imported = validateProject(JSON.parse(JSON.stringify(p)));
+    expect(supports(imported.beds[0])).toEqual(supports(b));
+    expect(imported.location).toBe(p.location);
+    expect(() =>
+      validateProject({
+        ...p,
+        brandLogo: {
+          dataUrl: "data:image/svg+xml;base64,abc",
+          name: "logo.svg",
+        },
+      }),
+    ).toThrow();
+    b.supportGrid.eastWest = 0;
+    expect(() => validateProject(p)).toThrow();
+  });
+});
+
+describe("Sujeción sobre bordes reales del panel", () => {
+  it("un giro de 180° conserva mid clamps compartidos con paneles sin girar", () => {
+    const b = {
+      ...createBed(),
+      rows: 1,
+      columns: 2,
+      panelRotations: { "0:1": 180 },
+    };
+    expect(quantity(b, "midClamp")).toBe(2);
+    expect(quantity(b, "endClamp")).toBe(4);
+  });
+  it("un giro oblicuo ubica cada clamp sobre un borde largo real", () => {
+    const b = {
+      ...createBed(),
+      rows: 1,
+      columns: 1,
+      panelRotations: { "0:0": 20 },
+    };
+    const d = dimensions(b),
+      a = (20 * Math.PI) / 180,
+      clamps = panelClamps(b);
+    expect(clamps.length).toBeGreaterThan(0);
+    for (const c of clamps) {
+      const x = c.x - d.rowColumnCenters[0][0],
+        z = c.distance - d.rowCenters[0];
+      expect(Math.abs(x * Math.cos(a) + z * Math.sin(a))).toBeCloseTo(
+        b.panelWidth / 2,
+      );
+      expect(Math.abs(-x * Math.sin(a) + z * Math.cos(a))).toBeLessThanOrEqual(
+        b.panelLength / 2 + 1e-6,
+      );
+    }
   });
 });

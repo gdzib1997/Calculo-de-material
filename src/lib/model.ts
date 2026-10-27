@@ -83,12 +83,16 @@ export interface Bed {
   supportSpacing: number;
   supportSpacingNS?: number;
   nsMode?: "auto" | "include" | "exclude";
+  ewMode?: "include" | "exclude";
   beamClipsPerCrossing?: number;
   bracingEnabled?: boolean;
   bracingCount?: number;
   bracingAxis?: "ew" | "ns";
   bracingLength?: number;
   supportOverrides?: Record<string, SupportPosition>;
+  supportGrid?: { eastWest: number; northSouth: number };
+  removedSupports?: string[];
+  extraSupports?: { id: string; trackId: string; x: number; z: number }[];
   panelRotations?: Record<string, number>;
   bases: boolean;
   baseWidth: number;
@@ -101,6 +105,8 @@ export interface Project {
   version: 1;
   name: string;
   customer: string;
+  location?: string;
+  brandLogo?: { dataUrl: string; name: string };
   beds: Bed[];
   updatedAt: string;
   prices?: Partial<Record<MaterialId, number>>;
@@ -126,7 +132,6 @@ export const MATERIALS: { id: MaterialId; name: string; unit: string }[] = [
   { id: "tBolt", name: "T-Bolt", unit: "pza" },
   { id: "ground", name: "Puesta a tierra · Tierras", unit: "pza" },
   { id: "concrete", name: "Bloque de concreto sólido", unit: "pza" },
-  { id: "leg", name: "Pata · perfil vertical", unit: "pza" },
 ];
 // Transcripción de la imagen del usuario. No constituye una especificación del fabricante.
 const SINGLE = {
@@ -173,7 +178,8 @@ export function createBed(index = 1): Bed {
     referenceRailLength: 4.7,
     supportSpacing: 1.52,
     supportSpacingNS: 1.5,
-    nsMode: "auto",
+    nsMode: "include",
+    ewMode: "include",
     beamClipsPerCrossing: 1,
     bracingEnabled: false,
     bracingCount: 2,
@@ -488,11 +494,13 @@ export interface SupportTrack {
   line?: number;
   runFirst?: number;
   name: string;
+  panelMount?: boolean;
+  gridIndex?: number;
 }
 export function supportTracks(b: Bed): SupportTrack[] {
   const d = dimensions(b),
     tracks: SupportTrack[] = [];
-  for (let r = 0; r < b.rows; r++) {
+  for (let r = 0; r < b.rows && b.ewMode !== "exclude"; r++) {
     let c = 0;
     while (c < b.columns) {
       if (!isActive(b, r, c)) {
@@ -506,6 +514,7 @@ export function supportTracks(b: Bed): SupportTrack[] {
         tracks.push({
           id: `ew:r${r}:c${first}:n${line}`,
           axis: "x",
+          panelMount: true,
           start: bounds.startX,
           end: bounds.startX + bounds.width,
           fixed: d.frontZ - distance * Math.cos(d.rad),
@@ -519,6 +528,17 @@ export function supportTracks(b: Bed): SupportTrack[] {
   for (const [i, section] of northSouthSections(b).entries()) {
     const q = sectionDimensions(b, section);
     if (q.width <= 0) continue;
+    // Las filas horizontales reciben sus propios rieles de montaje N–S.
+    if (
+      !Array.from({ length: section.rows }, (_, i) => i + section.row).some(
+        (r) =>
+          Array.from(
+            { length: section.columns },
+            (_, i) => i + section.column,
+          ).some((c) => !panelIsHorizontal(b, r, c)),
+      )
+    )
+      continue;
     const n = Math.ceil(q.width / b.supportSpacing) + 1;
     for (let c = 0; c < n; c++)
       tracks.push({
@@ -530,7 +550,237 @@ export function supportTracks(b: Bed): SupportTrack[] {
         name: `N–S · tramo ${i + 1} · línea ${c + 1}`,
       });
   }
+  if (b.nsMode !== "exclude") {
+    for (let r = 0; r < b.rows; r++)
+      for (let c = 0; c < b.columns; c++) {
+        if (!isActive(b, r, c) || !panelIsHorizontal(b, r, c)) continue;
+        const width = d.rowColumnWidths[r][c],
+          length =
+            Math.abs(Math.sin((panelRotation(b, r, c) * Math.PI) / 180)) * d.w +
+            Math.abs(Math.cos((panelRotation(b, r, c) * Math.PI) / 180)) * d.l;
+        for (const [line, offset] of [-width / 4, width / 4].entries()) {
+          const fixed = d.rowColumnCenters[r][c] + offset,
+            start = d.frontZ - (d.rowCenters[r] + length / 2) * Math.cos(d.rad),
+            end = d.frontZ - (d.rowCenters[r] - length / 2) * Math.cos(d.rad);
+          const existing = tracks.find(
+            (t) =>
+              t.axis === "z" &&
+              t.panelMount &&
+              Math.abs(t.fixed - fixed) < 1e-6 &&
+              start <= t.end + b.gap * Math.cos(d.rad) + 1e-6 &&
+              end >= t.start - b.gap * Math.cos(d.rad) - 1e-6,
+          );
+          if (existing) {
+            existing.start = Math.min(start, existing.start);
+            existing.end = Math.max(end, existing.end);
+          } else
+            tracks.push({
+              id: `mount:ns:r${r}:c${c}:n${line}`,
+              axis: "z",
+              panelMount: true,
+              start,
+              end,
+              fixed,
+              row: r,
+              line,
+              runFirst: c,
+              name: `N–S · panel ${r + 1}/${c + 1} · línea ${line + 1}`,
+            });
+        }
+      }
+  }
+  if (b.supportGrid && activeCount(b) > 0) {
+    const grid = b.supportGrid,
+      stations = (start: number, end: number, count: number) =>
+        Array.from({ length: count }, (_, i) =>
+          count === 1
+            ? (start + end) / 2
+            : start + ((end - start) * i) / (count - 1),
+        );
+    if (b.ewMode !== "exclude") {
+      const inset = Math.min(0.2, d.length / 4);
+      for (const [j, distance] of stations(
+        inset,
+        d.length - inset,
+        grid.northSouth,
+      ).entries()) {
+        const activeRows = Array.from({ length: b.rows }, (_, r) => r).filter(
+            (r) =>
+              Array.from({ length: b.columns }, (_, c) => c).some((c) =>
+                isActive(b, r, c),
+              ),
+          ),
+          row = activeRows.reduce((best, r) =>
+            Math.abs(d.rowCenters[r] - distance) <
+            Math.abs(d.rowCenters[best] - distance)
+              ? r
+              : best,
+          ),
+          columns = Array.from({ length: b.columns }, (_, c) => c).filter((c) =>
+            isActive(b, row, c),
+          ),
+          bounds = rowRunBounds(
+            b,
+            row,
+            columns[0],
+            columns.at(-1)! - columns[0] + 1,
+          ),
+          fixed = d.frontZ - distance * Math.cos(d.rad),
+          existing = tracks.find(
+            (t) =>
+              t.axis === "x" &&
+              Math.abs(t.fixed - fixed) < 1e-6 &&
+              Math.abs(t.start - bounds.startX) < 1e-6 &&
+              Math.abs(t.end - bounds.startX - bounds.width) < 1e-6,
+          );
+        if (existing) existing.gridIndex = j;
+        else
+          tracks.push({
+            id: `grid:ew:${j}`,
+            axis: "x",
+            start: bounds.startX,
+            end: bounds.startX + bounds.width,
+            fixed,
+            gridIndex: j,
+            row,
+            line: j,
+            runFirst: columns[0],
+            name: `E–O · cuadrícula · línea ${j + 1}`,
+          });
+      }
+    } else if (b.nsMode !== "exclude") {
+      const inset = Math.min(0.2, d.width / 4);
+      for (const [j, x] of stations(
+        d.minX + inset,
+        d.maxX - inset,
+        grid.eastWest,
+      ).entries()) {
+        const existing = tracks.find(
+          (t) =>
+            t.axis === "z" &&
+            Math.abs(t.fixed - x) < 1e-6 &&
+            Math.abs(t.start - d.backZ) < 1e-6 &&
+            Math.abs(t.end - d.frontZ) < 1e-6,
+        );
+        if (existing) existing.gridIndex = j;
+        else
+          tracks.push({
+            id: `grid:ns:${j}`,
+            axis: "z",
+            start: d.backZ,
+            end: d.frontZ,
+            fixed: x,
+            gridIndex: j,
+            name: `N–S · cuadrícula · línea ${j + 1}`,
+          });
+      }
+    }
+  }
   return tracks;
+}
+export function panelIsHorizontal(b: Bed, r: number, c: number) {
+  const a = (panelRotation(b, r, c) * Math.PI) / 180,
+    w = b.orientation === "portrait" ? b.panelWidth : b.panelLength,
+    l = b.orientation === "portrait" ? b.panelLength : b.panelWidth;
+  return (
+    Math.abs(Math.cos(a)) * w + Math.abs(Math.sin(a)) * l >
+    Math.abs(Math.sin(a)) * w + Math.abs(Math.cos(a)) * l + 1e-7
+  );
+}
+export interface PanelClamp {
+  id: string;
+  axis: "x" | "z";
+  x: number;
+  distance: number;
+  end: boolean;
+}
+// Puntos compartidos por la vista 3D y el cálculo de materiales.
+export function panelClamps(b: Bed): PanelClamp[] {
+  const d = dimensions(b),
+    tracks = supportTracks(b),
+    contacts: (PanelClamp & { side: number; panel: string })[] = [];
+  for (let r = 0; r < b.rows; r++)
+    for (let c = 0; c < b.columns; c++) {
+      if (!isActive(b, r, c)) continue;
+      const horizontal = panelIsHorizontal(b, r, c),
+        a = (panelRotation(b, r, c) * Math.PI) / 180,
+        shortWidth = d.w <= d.l,
+        short = Math.min(d.w, d.l),
+        long = Math.max(d.w, d.l),
+        normalX = shortWidth ? Math.cos(a) : -Math.sin(a),
+        normalD = shortWidth ? Math.sin(a) : Math.cos(a),
+        longX = shortWidth ? -Math.sin(a) : Math.cos(a),
+        longD = shortWidth ? Math.cos(a) : Math.sin(a),
+        x = d.rowColumnCenters[r][c],
+        distance = d.rowCenters[r];
+      for (const t of tracks.filter(
+        (t) => t.panelMount && t.axis === (horizontal ? "z" : "x"),
+      )) {
+        for (const side of [-1, 1]) {
+          const edgeX = x + ((side * short) / 2) * normalX,
+            edgeD = distance + ((side * short) / 2) * normalD,
+            u = horizontal
+              ? (t.fixed - edgeX) / longX
+              : ((d.frontZ - t.fixed) / Math.cos(d.rad) - edgeD) / longD;
+          if (Math.abs(u) > long / 2 + 1e-6) continue;
+          const contactX = edgeX + u * longX,
+            contactD = edgeD + u * longD,
+            onTrack = horizontal
+              ? d.frontZ - contactD * Math.cos(d.rad)
+              : contactX;
+          if (onTrack < t.start - 1e-6 || onTrack > t.end + 1e-6) continue;
+          const contact = {
+            id: `${r}:${c}:${t.id}:${side}`,
+            axis: t.axis,
+            x: contactX,
+            distance: contactD,
+            end: true,
+            side: side * Math.sign(horizontal ? normalD : normalX),
+            panel: panelKey(r, c),
+          };
+          if (
+            !contacts.some(
+              (v) =>
+                v.panel === contact.panel &&
+                v.side === contact.side &&
+                v.axis === contact.axis &&
+                Math.abs(v.x - contact.x) < 1e-6 &&
+                Math.abs(v.distance - contact.distance) < 1e-6,
+            )
+          )
+            contacts.push(contact);
+        }
+      }
+    }
+  const result: PanelClamp[] = [],
+    used = new Set<number>();
+  contacts.forEach((a, i) => {
+    if (used.has(i)) return;
+    const j = contacts.findIndex(
+      (v, k) =>
+        k > i &&
+        !used.has(k) &&
+        v.axis === a.axis &&
+        v.side !== a.side &&
+        v.panel !== a.panel &&
+        Math.abs(a.axis === "x" ? v.distance - a.distance : v.x - a.x) < 1e-6 &&
+        Math.abs(
+          Math.abs(a.axis === "x" ? v.x - a.x : v.distance - a.distance) -
+            b.gap,
+        ) < 1e-6,
+    );
+    if (j >= 0) {
+      used.add(j);
+      const z = contacts[j];
+      result.push({
+        ...a,
+        x: (a.x + z.x) / 2,
+        distance: (a.distance + z.distance) / 2,
+        end: false,
+      });
+    } else result.push(a);
+  });
+  return result;
 }
 export interface Support {
   id: string;
@@ -554,49 +804,84 @@ export function supports(b: Bed): Support[] {
   const d = dimensions(b),
     tracks = supportTracks(b),
     result: Support[] = [];
-  for (const rail of tracks.filter((t) => t.axis === "x")) {
-    const r = rail.row!,
-      first = rail.runFirst!,
-      line = rail.line!,
-      span = rail.end - rail.start,
-      inset = Math.min(0.2, span / 4),
-      available = span - 2 * inset,
-      n = Math.max(2, Math.ceil(available / b.supportSpacing) + 1);
-    for (let i = 0; i < n; i++) {
-      const id = `r${r}:c${first}:s${i}:n${line}`,
-        autoX = rail.start + inset + (available * i) / (n - 1),
-        autoZ = rail.fixed,
-        manual = b.supportOverrides?.[id];
-      const track = tracks.find((t) => t.id === manual?.trackId) || rail;
-      const x =
+  const rails = b.supportGrid
+    ? tracks.filter((t) => t.gridIndex !== undefined)
+    : tracks.filter((t) => t.axis === (b.ewMode === "exclude" ? "z" : "x"));
+  const append = (
+    rail: SupportTrack,
+    id: string,
+    autoX: number,
+    autoZ: number,
+    slot: number,
+  ) => {
+    if (b.removedSupports?.includes(id)) return;
+    const manual = b.supportOverrides?.[id],
+      track = tracks.find((t) => t.id === manual?.trackId) || rail,
+      x =
         track.axis === "x"
           ? Math.max(track.start, Math.min(track.end, manual?.x ?? autoX))
-          : track.fixed;
-      const z =
+          : track.fixed,
+      z =
         track.axis === "z"
           ? Math.max(track.start, Math.min(track.end, manual?.z ?? autoZ))
           : track.fixed;
-      result.push({
+    result.push({
+      id,
+      x,
+      z,
+      autoX,
+      autoZ,
+      row: rail.row ?? 0,
+      line: rail.line ?? rail.gridIndex ?? 0,
+      slot,
+      runFirst: rail.runFirst ?? 0,
+      moved: !!manual,
+      trackId: track.id,
+      axis: track.axis,
+      bottomHardware: manual?.bottomHardware ?? "lFoot",
+      topHardware: manual?.topHardware ?? "tiltPlate",
+      constrained:
+        !!manual &&
+        (Math.abs(x - manual.x) > 1e-7 || Math.abs(z - manual.z) > 1e-7),
+      length: b.frontHeight + (d.frontZ - z) * Math.tan(d.rad),
+    });
+  };
+  for (const rail of rails) {
+    const span = rail.end - rail.start,
+      inset = Math.min(
+        0.2 * (rail.axis === "z" ? Math.cos(d.rad) : 1),
+        span / 4,
+      ),
+      available = span - 2 * inset,
+      spacing =
+        rail.axis === "x" ? b.supportSpacing : (b.supportSpacingNS ?? 1.5),
+      count = b.supportGrid
+        ? rail.axis === "x"
+          ? b.supportGrid.eastWest
+          : b.supportGrid.northSouth
+        : Math.max(2, Math.ceil(available / spacing) + 1);
+    for (let i = 0; i < count; i++) {
+      const along =
+          count === 1
+            ? (rail.start + rail.end) / 2
+            : rail.start + inset + (available * i) / (count - 1),
+        id = b.supportGrid
+          ? `grid:${rail.axis}:${rail.gridIndex}:${i}`
+          : rail.axis === "x"
+            ? `r${rail.row}:c${rail.runFirst}:s${i}:n${rail.line}`
+            : `${rail.id}:s${i}`;
+      append(
+        rail,
         id,
-        x,
-        z,
-        autoX,
-        autoZ,
-        row: r,
-        line,
-        slot: i,
-        runFirst: first,
-        moved: !!manual,
-        trackId: track.id,
-        axis: track.axis,
-        bottomHardware: manual?.bottomHardware ?? "lFoot",
-        topHardware: manual?.topHardware ?? "tiltPlate",
-        constrained:
-          !!manual &&
-          (Math.abs(x - manual.x) > 1e-7 || Math.abs(z - manual.z) > 1e-7),
-        length: b.frontHeight + (d.frontZ - z) * Math.tan(d.rad),
-      });
+        rail.axis === "x" ? along : rail.fixed,
+        rail.axis === "z" ? along : rail.fixed,
+        i,
+      );
     }
+  }
+  for (const extra of b.extraSupports ?? []) {
+    const rail = tracks.find((t) => t.id === extra.trackId);
+    if (rail) append(rail, extra.id, extra.x, extra.z, result.length);
   }
   // Preserva el orden histórico: fila, tramo, estación y línea.
   return result.sort(
@@ -648,9 +933,7 @@ export function supportNeighbours(b: Bed, id: string) {
   };
 }
 export function northSouthSections(b: Bed) {
-  return sections(b).filter(
-    (s) => b.nsMode !== "exclude" && (b.nsMode === "include" || s.rows > 1),
-  );
+  return b.nsMode === "exclude" ? [] : sections(b);
 }
 export interface Brace {
   id: string;
@@ -737,7 +1020,8 @@ export function memberCuts(b: Bed) {
     const length =
       t.axis === "x"
         ? t.end - t.start + 2 * b.overhang
-        : (t.end - t.start) / Math.cos(d.rad);
+        : (t.end - t.start) / Math.cos(d.rad) +
+          (t.panelMount ? 2 * b.overhang : 0);
     cuts.push({
       id: t.id,
       kind: t.axis === "x" ? "ew" : "ns",
@@ -795,12 +1079,9 @@ export function calculate(
   prices: Partial<Record<MaterialId, number>> = {},
 ): Material[] {
   const q: Partial<Record<MaterialId, number>> = {};
-  const tracks = supportTracks(b);
-  q.endClamp = tracks.filter((t) => t.axis === "x").length * 2;
-  q.midClamp = 0;
-  for (let r = 0; r < b.rows; r++)
-    for (let c = 0; c < b.columns - 1; c++)
-      if (isActive(b, r, c) && isActive(b, r, c + 1)) q.midClamp += 2;
+  const clamps = panelClamps(b);
+  q.endClamp = clamps.filter((c) => c.end).length;
+  q.midClamp = clamps.filter((c) => !c.end).length;
   const rails = railBreakdown(b);
   q.rail = rails.total;
   q.beamClip = rails.beamClip;
@@ -829,8 +1110,7 @@ export function calculate(
     finalTilt = b.overrides.tiltPlate ?? q.tiltPlate;
   q.tBolt = finalLFoot + Math.min(finalLFoot, braceLFoot) + 2 * finalTilt;
   q.ground = activeCount(b) > 0 ? 1 : 0;
-  q.leg = supports(b).length;
-  q.concrete = b.bases ? q.leg : 0;
+  q.concrete = b.bases ? legs.length : 0;
   // Conserva los ajustes de versiones anteriores sumando las partidas antiguas.
   const legacyRail =
     b.overrides.railEW !== undefined || b.overrides.railNS !== undefined;
@@ -956,6 +1236,17 @@ export function validateProject(input: unknown): Project {
       if (!Number.isFinite(r[key]) || r[key] < min || r[key] > max)
         throw new Error("Medidas de techo inválidas.");
   }
+  if (
+    p.location !== undefined &&
+    (typeof p.location !== "string" || p.location.length > 200)
+  )
+    throw new Error("Ubicación inválida.");
+  if (
+    p.brandLogo &&
+    (typeof p.brandLogo.name !== "string" ||
+      !validRasterDataUrl(p.brandLogo.dataUrl))
+  )
+    throw new Error("Logo inválido.");
   const ids = new Set<string>();
   const ranges: Record<string, [number, number]> = {
     rows: [1, 6],
@@ -1016,10 +1307,48 @@ export function validateProject(input: unknown): Project {
     )
       throw new Error("Contravientos inválidos.");
     if (
+      b.supportGrid &&
+      (!Number.isInteger(b.supportGrid.eastWest) ||
+        b.supportGrid.eastWest < 1 ||
+        b.supportGrid.eastWest > 20 ||
+        !Number.isInteger(b.supportGrid.northSouth) ||
+        b.supportGrid.northSouth < 1 ||
+        b.supportGrid.northSouth > 20)
+    )
+      throw new Error("Cuadrícula de patas inválida.");
+    if (
+      b.removedSupports !== undefined &&
+      (!Array.isArray(b.removedSupports) ||
+        b.removedSupports.length > 1000 ||
+        b.removedSupports.some((id) => typeof id !== "string"))
+    )
+      throw new Error("Patas retiradas inválidas.");
+    if (
+      b.extraSupports !== undefined &&
+      (!Array.isArray(b.extraSupports) ||
+        b.extraSupports.length > 200 ||
+        new Set(b.extraSupports.map((s) => s?.id)).size !==
+          b.extraSupports.length ||
+        b.extraSupports.some(
+          (s) =>
+            !s ||
+            typeof s.id !== "string" ||
+            !s.id.startsWith("extra:") ||
+            typeof s.trackId !== "string" ||
+            !Number.isFinite(s.x) ||
+            !Number.isFinite(s.z) ||
+            Math.abs(s.x) > 200 ||
+            Math.abs(s.z) > 200,
+        ))
+    )
+      throw new Error("Patas adicionales inválidas.");
+    if (
       b.nsMode !== undefined &&
       !["auto", "include", "exclude"].includes(b.nsMode)
     )
       throw new Error("Opción de rieles norte-sur inválida.");
+    if (b.ewMode !== undefined && !["include", "exclude"].includes(b.ewMode))
+      throw new Error("Opción de rieles este-oeste inválida.");
     if (b.bracingAxis !== undefined && !["ew", "ns"].includes(b.bracingAxis))
       throw new Error("Eje de contravientos inválido.");
     if (b.bracingEnabled !== undefined && typeof b.bracingEnabled !== "boolean")
@@ -1097,7 +1426,7 @@ export function validateProject(input: unknown): Project {
       Object.entries(b.overrides).some(
         ([id, v]) =>
           !(
-            ["railEW", "railNS"].includes(id) ||
+            ["railEW", "railNS", "leg"].includes(id) ||
             MATERIALS.some((m) => m.id === id)
           ) ||
           typeof v !== "number" ||
@@ -1113,6 +1442,9 @@ export function validateProject(input: unknown): Project {
     ...b,
     position: b.position ?? { x: bedPose(p, i).x, z: bedPose(p, i).z },
     azimuth: b.azimuth ?? 0,
+    nsMode:
+      b.nsMode === "auto" || b.nsMode === undefined ? "include" : b.nsMode,
+    ewMode: b.ewMode ?? "include",
     manualBraces: b.manualBraces ?? braceConnections(b),
   }));
   return p;
