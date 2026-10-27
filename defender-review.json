@@ -1,8 +1,8 @@
 {
   "status": "scan-completed-no-detection",
-  "scannedAtUtc": "2026-10-27T22:31:33.5964426Z",
-  "workflowRun": "https://github.com/gdzib1997/Calculo-de-material/actions/runs/40595304691",
-  "sourceCommit": "a4afcddc91436c780ed797f324248bb3e1cc2206",
+  "scannedAtUtc": "2026-10-27T23:24:19.0260107Z",
+  "workflowRun": "https://github.com/gdzib1997/Calculo-de-material/actions/runs/40601745159",
+  "sourceCommit": "bdbf6e19b5e374dbf128690c495b13f7df6092f3",
   "originalZipSha256": "aee820f7fa85dbe99a1f331bc972e890a93a174e0cb52f0edc8b8b514dfb948b",
   "engineVersion": "1.1.26090.9",
   "signatureVersion": "1.461.233.0",
@@ -23,7 +23,7 @@
     },
     {
       "path": "web\\index.html",
-      "sha256": "1d6baf0805314a980d46099a491b69fd024e2cf40b0967aa6de9391f54edfc6c"
+      "sha256": "6134a0572ae394e98e372ae1d590f3f9cac921b55faa3a58a5411504cd565f34"
     },
     {
       "path": "web\\assets\\dm-sans-latin-400-normal-BwCSEQnW.woff",
@@ -58,36 +58,36 @@
       "sha256": "35c5efa0e5daa52ee5c6500f5be354bf751fb65c4e49e1d6806c6eb5883e8fe9"
     },
     {
-      "path": "web\\assets\\exceljs.min-DCAO-UNC.js",
-      "sha256": "b21e917259383ebbcc175c78d8537f8a511dea000c6b1abcf6efc84d29b8b2f4"
+      "path": "web\\assets\\exceljs.min-D87F_Dq_.js",
+      "sha256": "d82dc0a2aea683413e91af3b45e97dfa09c82f12e8fc5a0110d4a21c2ccb0690"
     },
     {
-      "path": "web\\assets\\export-DLGiAJjj.js",
-      "sha256": "acf34642fd98b24736ca9811208cd16167ccd514e0c80469abeb72e72a316aac"
+      "path": "web\\assets\\export-Bzijm9gM.js",
+      "sha256": "77aaf1e08ec58957e6608551ab253a92907768b571fd32bb3e0121177d55c6a8"
     },
     {
       "path": "web\\assets\\html2canvas.esm-DXEQVQnt.js",
       "sha256": "7b07a9ca175c614e8e7de447198d35b0d161dd50db2c63b5f7fd6ea0e1e876f2"
     },
     {
-      "path": "web\\assets\\index-B0MEWbQ9.css",
-      "sha256": "4525743e57018707d4c88d5a18cae5bdcb5c4ec013b127822fada5fc1390df02"
-    },
-    {
-      "path": "web\\assets\\index-CcoASI-b.js",
-      "sha256": "f1938149cedd4ad35b48d80a3ce66a9006a2f4eb1fec558fdf117636ba2953b0"
+      "path": "web\\assets\\index-CHFXyGPc.css",
+      "sha256": "f65db70c2366c5f784977ab91c0a219bb7ce8655fb80efeb3889c984567ae084"
     },
     {
       "path": "web\\assets\\index-CJXK9WOL.js",
       "sha256": "5f3914a022b5f3e29b16e2d57fd7b0092c07cf010cc9c1aa8194b7293ee2caae"
     },
     {
-      "path": "web\\assets\\index.es-DhjalPnS.js",
-      "sha256": "4bdc387e6c82c78e3b26a7c0e6da8ce1e6162beb4a3408c0fea8b4de6d2c66bf"
+      "path": "web\\assets\\index-j7HpvZUI.js",
+      "sha256": "41c29b73feb94e5da7bf4c1b0c10d2b2f99ea0e1349b81271606b5ada95296e4"
     },
     {
-      "path": "web\\assets\\jspdf.es.min-DC4CU8s6.js",
-      "sha256": "847e59699f40e9b4e891da46501e9011d344e432ec093939d076cc33e893dbca"
+      "path": "web\\assets\\index.es-Bv9v0U0D.js",
+      "sha256": "0d4655b79df00e87bec56775be28628f2e505a93cb2a2c7f389f93dbd246630e"
+    },
+    {
+      "path": "web\\assets\\jspdf.es.min-CjUL6kil.js",
+      "sha256": "eb20a82b63d89d239ceb13e3619886c5da0faa6ea365ea89b5e1a3aa74ea516f"
     },
     {
       "path": "web\\assets\\jspdf.plugin.autotable-DSC45M_K.js",
@@ -130,8 +130,8 @@
       "sha256": "d20e7581818a4ef09a7a0e1bc84597c51fa253aea2b5b55935d5d7809793a28d"
     },
     {
-      "path": "web\\assets\\Scene-BypKsrcf.js",
-      "sha256": "3442d2c43151526568eb9073edb4b95451f0f54ebcfe9ae0c86e4c4737c9b1ff"
+      "path": "web\\assets\\Scene-DjAw4LwQ.js",
+      "sha256": "80f7a3d470bef330f5ae8e68978c4ec3a1801854ab98beda1c175b0cef3794a8"
     }
   ],
   "limitation": "Resultado limitado a estos archivos, motor y firmas. No garantiza ausencia de malware ni el mismo resultado en otros equipos. La alerta original del usuario no se considera un falso positivo confirmado."
