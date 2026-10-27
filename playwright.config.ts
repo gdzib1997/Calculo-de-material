@@ -9,7 +9,9 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:5173",
     viewport: { width: 1440, height: 1000 },
     launchOptions: {
-      executablePath: process.env.CHROMIUM_PATH || "/usr/bin/chromium",
+      executablePath:
+        process.env.CHROMIUM_PATH ||
+        (process.platform === "win32" ? undefined : "/usr/bin/chromium"),
       args: [
         "--no-sandbox",
         "--use-gl=angle",

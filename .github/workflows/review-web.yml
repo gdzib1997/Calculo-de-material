@@ -12,6 +12,7 @@ on:
       - public/**
       - scripts/offline-build.ts
       - scripts/offline-worker.js
+      - scripts/test-desktop-windows.ps1
       - tests/**
       - package.json
       - package-lock.json
@@ -46,9 +47,8 @@ jobs:
       - name: Compilar sitio con recursos separados
         run: npm run build -- --base /Calculo-de-material/
       - name: Comprobar uso en PC y exportaciones sin conexión
-        env:
-          CHROMIUM_PATH: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
-        run: npx playwright test --config playwright.desktop.config.ts
+        shell: pwsh
+        run: ./scripts/test-desktop-windows.ps1
       - name: Analizar muestra original y compilación web sin ejecutarlas
         shell: pwsh
         run: ./scripts/scan-with-defender.ps1 -WebBuild dist
