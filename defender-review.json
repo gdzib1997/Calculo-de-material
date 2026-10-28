@@ -1,8 +1,8 @@
 {
   "status": "scan-completed-no-detection",
-  "scannedAtUtc": "2026-10-27T23:24:19.0260107Z",
-  "workflowRun": "https://github.com/gdzib1997/Calculo-de-material/actions/runs/40601745159",
-  "sourceCommit": "bdbf6e19b5e374dbf128690c495b13f7df6092f3",
+  "scannedAtUtc": "2026-10-28T00:02:42.4771893Z",
+  "workflowRun": "https://github.com/gdzib1997/Calculo-de-material/actions/runs/40605935698",
+  "sourceCommit": "f9a259a0b1b9e6cfd9f4d5f77276f48d58efd4f5",
   "originalZipSha256": "aee820f7fa85dbe99a1f331bc972e890a93a174e0cb52f0edc8b8b514dfb948b",
   "engineVersion": "1.1.26090.9",
   "signatureVersion": "1.461.233.0",
@@ -22,8 +22,28 @@
       "sha256": "5e2f4c188ecadc7c0b2ff3fb61255a224bb44e1f9a5a6e75d32b314e3ee5936b"
     },
     {
+      "path": "web\\app-icon.svg",
+      "sha256": "5b94fda7650709d3f5abf21e157fb321ae3e0e9e12aadb6435633122d36931a4"
+    },
+    {
+      "path": "web\\icon-192.png",
+      "sha256": "b969d3650e2c8c66be9d1c82fd3639df32e5f839123d6f3b220501f7ac49484f"
+    },
+    {
+      "path": "web\\icon-512.png",
+      "sha256": "8841c0e70bf2b7f8be547dc312c7dd06458081c14110125b99580a4c9e7e3d29"
+    },
+    {
       "path": "web\\index.html",
-      "sha256": "6134a0572ae394e98e372ae1d590f3f9cac921b55faa3a58a5411504cd565f34"
+      "sha256": "4c767a0c4b63e8b32fbf08bc9c260cc258cdc00a138e2b00d3565314c2fca22a"
+    },
+    {
+      "path": "web\\manifest.webmanifest",
+      "sha256": "3fdd9b462752079ff28fc0a04fb3c8b5b1b338dcf5f00425af1c09cbde04dc7d"
+    },
+    {
+      "path": "web\\sw.js",
+      "sha256": "737542e19c40ae147c8b1e2bd21bf373b5462c6dcd963baf42272746a78ada1d"
     },
     {
       "path": "web\\assets\\dm-sans-latin-400-normal-BwCSEQnW.woff",
@@ -58,36 +78,36 @@
       "sha256": "35c5efa0e5daa52ee5c6500f5be354bf751fb65c4e49e1d6806c6eb5883e8fe9"
     },
     {
-      "path": "web\\assets\\exceljs.min-D87F_Dq_.js",
-      "sha256": "d82dc0a2aea683413e91af3b45e97dfa09c82f12e8fc5a0110d4a21c2ccb0690"
+      "path": "web\\assets\\exceljs.min-DcWjSGxA.js",
+      "sha256": "ed3e9de72aba3bfae4efb469ddc81ec51515bf571a7f6a1fe99501f0963aedf0"
     },
     {
-      "path": "web\\assets\\export-Bzijm9gM.js",
-      "sha256": "77aaf1e08ec58957e6608551ab253a92907768b571fd32bb3e0121177d55c6a8"
+      "path": "web\\assets\\export-C2AHvj01.js",
+      "sha256": "53e39da9876961a7a9945d34df77e9dde2f1d151aa8203a590dfda25a21bb842"
     },
     {
       "path": "web\\assets\\html2canvas.esm-DXEQVQnt.js",
       "sha256": "7b07a9ca175c614e8e7de447198d35b0d161dd50db2c63b5f7fd6ea0e1e876f2"
     },
     {
-      "path": "web\\assets\\index-CHFXyGPc.css",
-      "sha256": "f65db70c2366c5f784977ab91c0a219bb7ce8655fb80efeb3889c984567ae084"
+      "path": "web\\assets\\index-B_dEhtAJ.css",
+      "sha256": "63678858c71069890258a2252f0c12b4bdd46c24752701380d0421c8680236b2"
     },
     {
       "path": "web\\assets\\index-CJXK9WOL.js",
       "sha256": "5f3914a022b5f3e29b16e2d57fd7b0092c07cf010cc9c1aa8194b7293ee2caae"
     },
     {
-      "path": "web\\assets\\index-j7HpvZUI.js",
-      "sha256": "41c29b73feb94e5da7bf4c1b0c10d2b2f99ea0e1349b81271606b5ada95296e4"
+      "path": "web\\assets\\index-nWnr4-hn.js",
+      "sha256": "aa225fb4fe4259a6d892cfdcfbfac52c82d5e4862652672f19991bde2612541f"
     },
     {
-      "path": "web\\assets\\index.es-Bv9v0U0D.js",
-      "sha256": "0d4655b79df00e87bec56775be28628f2e505a93cb2a2c7f389f93dbd246630e"
+      "path": "web\\assets\\index.es-M1yzAg6K.js",
+      "sha256": "74c02cc43a81e19a82b1670d9ea7dd693c354e9ad674a5700cf67a175034cf53"
     },
     {
-      "path": "web\\assets\\jspdf.es.min-CjUL6kil.js",
-      "sha256": "eb20a82b63d89d239ceb13e3619886c5da0faa6ea365ea89b5e1a3aa74ea516f"
+      "path": "web\\assets\\jspdf.es.min-nTgbwPEv.js",
+      "sha256": "4ff9ea4232cb476c96b95b903d9a1c26e9a40a8fa027c7f9854a71f96c062a47"
     },
     {
       "path": "web\\assets\\jspdf.plugin.autotable-DSC45M_K.js",
@@ -130,8 +150,8 @@
       "sha256": "d20e7581818a4ef09a7a0e1bc84597c51fa253aea2b5b55935d5d7809793a28d"
     },
     {
-      "path": "web\\assets\\Scene-DjAw4LwQ.js",
-      "sha256": "80f7a3d470bef330f5ae8e68978c4ec3a1801854ab98beda1c175b0cef3794a8"
+      "path": "web\\assets\\Scene-DI-t73Em.js",
+      "sha256": "4ecdef069b11285fccd4dd14b238b6d76ba42d41c82a3806be00be683e1429c3"
     }
   ],
   "limitation": "Resultado limitado a estos archivos, motor y firmas. No garantiza ausencia de malware ni el mismo resultado en otros equipos. La alerta original del usuario no se considera un falso positivo confirmado."
